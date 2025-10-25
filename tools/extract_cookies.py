@@ -30,6 +30,11 @@ def convert_cookie_editor_format(input_file: str, output_file: str = "./config/c
     playwright_cookies = []
 
     for cookie in cookies:
+        # Handle sameSite - convert null to Lax
+        same_site = cookie.get('sameSite')
+        if same_site is None or same_site == 'null' or same_site not in ['Strict', 'Lax', 'None']:
+            same_site = 'Lax'
+
         playwright_cookie = {
             'name': cookie.get('name', ''),
             'value': cookie.get('value', ''),
@@ -38,7 +43,7 @@ def convert_cookie_editor_format(input_file: str, output_file: str = "./config/c
             'expires': cookie.get('expirationDate', -1),
             'httpOnly': cookie.get('httpOnly', False),
             'secure': cookie.get('secure', False),
-            'sameSite': cookie.get('sameSite', 'Lax')
+            'sameSite': same_site
         }
 
         # Remove expires if it's -1 (session cookie)

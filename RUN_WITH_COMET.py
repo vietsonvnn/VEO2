@@ -27,6 +27,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 
 from script_generator import ScriptGenerator
 from browser_automation.flow_controller_selenium import FlowControllerSelenium
+from utils.detailed_logger import DetailedLogger
 
 # Load API key
 from dotenv import load_dotenv
@@ -140,7 +141,7 @@ async def generate_script_async(topic, duration_minutes, cookies, project_id):
 def produce_videos_sync(cookies_path, progress=gr.Progress()):
     """Produce all videos with Comet browser (synchronous) with real-time progress"""
     if not state.script or not state.scenes:
-        return "❌ Chưa có kịch bản. Vui lòng tạo kịch bản trước!", [], None, [], None
+        return "❌ Chưa có kịch bản. Vui lòng tạo kịch bản trước!", [], None, None, []
 
     # NOTE: Videos will create 2 outputs per prompt (x2 setting)
     # This is current Flow behavior - cannot be changed via automation
@@ -155,6 +156,11 @@ def produce_videos_sync(cookies_path, progress=gr.Progress()):
     status_lines.append("⚠️  Lưu ý: Flow mặc định tạo 2 videos/prompt (x2)")
     status_lines.append("="*60)
     status_lines.append("")
+
+    # Initialize detailed logger
+    session_name = datetime.now().strftime("%Y%m%d_%H%M%S")
+    logger = DetailedLogger(session_name=session_name)
+    logger.info(f"Session started: {state.script['title']}", event_type="session_start")
 
     controller = FlowControllerSelenium(cookies_path=cookies_path, headless=False)
     current_screenshot = None  # Track current screenshot
@@ -184,7 +190,7 @@ def produce_videos_sync(cookies_path, progress=gr.Progress()):
             else:
                 status_lines.append("❌ Không thể vào project")
                 controller.close()
-                return "\n".join(status_lines), []
+                return "\n".join(status_lines), [], None, None, []
         else:
             progress(0.15, desc="📁 Đang tạo project mới...")
             status_lines.append("📁 Đang tạo project mới...")
@@ -204,7 +210,7 @@ def produce_videos_sync(cookies_path, progress=gr.Progress()):
                 else:
                     status_lines.append("❌ Không thể vào project mặc định")
                     controller.close()
-                    return "\n".join(status_lines), []
+                    return "\n".join(status_lines), [], None, None, []
 
         status_lines.append("")
 
@@ -212,12 +218,17 @@ def produce_videos_sync(cookies_path, progress=gr.Progress()):
         total_scenes = len(state.scenes)
         for i, scene_state in enumerate(state.scenes):
             scene_num = scene_state['number']
+            scene_start_time = datetime.now()
+
             progress((0.2 + (i / total_scenes) * 0.7), desc=f"🎬 Scene {scene_num}/{total_scenes}")
 
             status_lines.append(f"{'─'*60}")
             status_lines.append(f"🎬 SCENE {scene_num}/{total_scenes}")
             status_lines.append(f"📝 Mô tả: {scene_state['description'][:50]}...")
             status_lines.append("")
+
+            # Log scene start
+            logger.scene_start(scene_num, total_scenes, scene_state['description'])
 
             try:
                 status_lines.append(f"   ⏳ Đang tạo video (VEO 3.1 - Comet)...")
@@ -227,6 +238,9 @@ def produce_videos_sync(cookies_path, progress=gr.Progress()):
                     nonlocal current_screenshot
                     if screenshot_path:
                         current_screenshot = screenshot_path
+                        logger.screenshot_captured(scene_num, screenshot_path)
+                    if percent % 10 == 0:  # Log every 10%
+                        logger.flow_progress(scene_num, percent)
                     progress_desc = f"🎬 Scene {scene_num}/{total_scenes} - {percent}% ({elapsed}s)"
                     progress((0.2 + (i / total_scenes) * 0.7), desc=progress_desc)
 
@@ -238,6 +252,9 @@ def produce_videos_sync(cookies_path, progress=gr.Progress()):
                 )
 
                 if url:
+                    # Calculate duration
+                    scene_duration = (datetime.now() - scene_start_time).total_seconds()
+
                     status_lines.append(f"   ✅ Video đã tạo xong!")
                     scene_state['status'] = 'completed'
                     scene_state['url'] = url
@@ -246,22 +263,31 @@ def produce_videos_sync(cookies_path, progress=gr.Progress()):
                     # Update latest video for display
                     latest_video = url
 
+                    # Add to gallery
+                    all_videos.append(url)
+
+                    # Log completion
+                    logger.scene_complete(scene_num, url, scene_duration)
+
                     # Check if it's a local file or URL
                     if url.startswith('/') or url.startswith('./'):
                         status_lines.append(f"   📥 Video đã download: {url}")
                     else:
                         status_lines.append(f"   🌐 Video URL: {url[:60]}...")
 
-                    status_lines.append(f"   ✨ Scene {scene_num}: HOÀN THÀNH")
+                    status_lines.append(f"   ✨ Scene {scene_num}: HOÀN THÀNH ({scene_duration:.1f}s)")
                 else:
                     scene_state['status'] = 'failed'
                     status_lines.append(f"   ❌ Không thể tạo video")
                     status_lines.append(f"   ⚠️ Scene {scene_num}: THẤT BẠI")
+                    logger.scene_failed(scene_num, "Video generation returned no URL")
 
             except Exception as e:
                 scene_state['status'] = 'failed'
-                status_lines.append(f"   ❌ Lỗi: {str(e)}")
+                error_msg = str(e)
+                status_lines.append(f"   ❌ Lỗi: {error_msg}")
                 status_lines.append(f"   ⚠️ Scene {scene_num}: THẤT BẠI")
+                logger.scene_failed(scene_num, error_msg)
 
             status_lines.append("")
 
@@ -300,14 +326,149 @@ def produce_videos_sync(cookies_path, progress=gr.Progress()):
                 'status': f"{status_icon} {scene_state['status']}"
             })
 
+        # Close logger and save summary
+        summary = logger.get_summary()
+        logger.close()
+
+        status_lines.append("")
+        status_lines.append(f"📊 Log file: ./data/logs/session_{session_name}.log")
+        status_lines.append(f"📊 JSON file: ./data/logs/session_{session_name}.json")
+
         progress(1.0, desc="✅ Hoàn thành!")
-        return "\n".join(status_lines), scene_updates, current_screenshot, latest_video
+        return "\n".join(status_lines), scene_updates, current_screenshot, latest_video, all_videos
 
     except Exception as e:
         controller.close()
+        if 'logger' in locals():
+            logger.error(f"Fatal error: {str(e)}", event_type="fatal_error")
+            logger.close()
         status_lines.append("")
         status_lines.append(f"❌ Lỗi: {str(e)}")
-        return "\n".join(status_lines), [], None, None
+        return "\n".join(status_lines), [], None, None, []
+
+def regenerate_single_scene(scene_number, cookies_path, progress=gr.Progress()):
+    """Regenerate a single scene"""
+    if not state.script or not state.scenes:
+        return "❌ Chưa có kịch bản!", None, None, []
+
+    # Find scene
+    scene_state = None
+    for s in state.scenes:
+        if s['number'] == scene_number:
+            scene_state = s
+            break
+
+    if not scene_state:
+        return f"❌ Không tìm thấy scene {scene_number}!", None, None, []
+
+    status_lines = []
+    status_lines.append("="*60)
+    status_lines.append(f"🔄 REGENERATE SCENE {scene_number}")
+    status_lines.append("="*60)
+    status_lines.append(f"📝 Mô tả: {scene_state['description']}")
+    status_lines.append(f"💬 Prompt: {scene_state['prompt'][:80]}...")
+    status_lines.append("")
+
+    # Initialize logger
+    session_name = datetime.now().strftime("%Y%m%d_%H%M%S")
+    logger = DetailedLogger(session_name=f"regen_{session_name}")
+    logger.info(f"Regenerating scene {scene_number}", event_type="regenerate_start")
+
+    controller = FlowControllerSelenium(cookies_path=cookies_path, headless=False)
+    current_screenshot = None
+    new_video = None
+
+    try:
+        progress(0.1, desc="🚀 Khởi động Comet...")
+        status_lines.append("🚀 Đang khởi động Comet browser...")
+        controller.start()
+        status_lines.append("✅ Comet đã khởi động")
+        status_lines.append("")
+
+        progress(0.2, desc="🌐 Đang vào Flow...")
+        status_lines.append("🌐 Đang vào trang Flow...")
+        controller.goto_flow()
+        status_lines.append("✅ Đã vào trang Flow")
+        status_lines.append("")
+
+        # Go to project
+        if state.project_id:
+            progress(0.3, desc="📁 Đang vào project...")
+            status_lines.append(f"📁 Đang vào project: {state.project_id}...")
+            success = controller.goto_project(state.project_id)
+            if not success:
+                status_lines.append("❌ Không thể vào project")
+                controller.close()
+                return "\n".join(status_lines), None, None, []
+            status_lines.append("✅ Đã vào project")
+        else:
+            status_lines.append("❌ Không có Project ID")
+            controller.close()
+            return "\n".join(status_lines), None, None, []
+
+        status_lines.append("")
+        status_lines.append(f"🎬 Đang tạo lại video cho scene {scene_number}...")
+
+        scene_start_time = datetime.now()
+
+        # Progress callback
+        def regenerate_progress_callback(elapsed, percent, screenshot_path):
+            nonlocal current_screenshot
+            if screenshot_path:
+                current_screenshot = screenshot_path
+                logger.screenshot_captured(scene_number, screenshot_path)
+            if percent % 10 == 0:
+                logger.flow_progress(scene_number, percent)
+            progress_desc = f"🔄 Scene {scene_number} - {percent}% ({elapsed}s)"
+            progress(0.4 + (percent / 100) * 0.5, desc=progress_desc)
+
+        url = controller.create_video_from_prompt(
+            prompt=scene_state['prompt'],
+            aspect_ratio="16:9",
+            is_first_video=True,
+            progress_callback=regenerate_progress_callback
+        )
+
+        if url:
+            scene_duration = (datetime.now() - scene_start_time).total_seconds()
+            status_lines.append(f"✅ Video mới đã tạo xong!")
+
+            # Update scene state
+            scene_state['url'] = url
+            scene_state['video_path'] = url
+            scene_state['status'] = 'completed'
+            new_video = url
+
+            logger.scene_complete(scene_number, url, scene_duration)
+
+            if url.startswith('/') or url.startswith('./'):
+                status_lines.append(f"📥 Video đã download: {url}")
+            else:
+                status_lines.append(f"🌐 Video URL: {url[:60]}...")
+
+            status_lines.append(f"✨ Scene {scene_number}: REGENERATED ({scene_duration:.1f}s)")
+        else:
+            status_lines.append(f"❌ Không thể tạo video")
+            logger.scene_failed(scene_number, "Regeneration returned no URL")
+
+        controller.close()
+        logger.close()
+
+        status_lines.append("="*60)
+        progress(1.0, desc="✅ Hoàn thành!")
+
+        # Get all videos for gallery update
+        all_videos = [s.get('video_path') for s in state.scenes if s.get('video_path')]
+
+        return "\n".join(status_lines), current_screenshot, new_video, all_videos
+
+    except Exception as e:
+        controller.close()
+        logger.error(f"Regeneration error: {str(e)}", event_type="regenerate_error")
+        logger.close()
+        status_lines.append("")
+        status_lines.append(f"❌ Lỗi: {str(e)}")
+        return "\n".join(status_lines), None, None, []
 
 def generate_script_wrapper(topic, duration, cookies, project_id):
     """Wrapper for async script generation"""
@@ -387,32 +548,84 @@ with gr.Blocks(theme=gr.themes.Glass(), css=css, title="VEO 3.1 - Comet") as app
                         height=400
                     )
 
-            # Video gallery - hiển thị TẤT CẢ videos đã tạo
-            gr.Markdown("### 🎬 Video Gallery - Tất cả cảnh đã tạo")
+            # Video player để hiển thị video vừa tạo xong
+            gr.Markdown("### 🎬 Video mới nhất")
 
-            video_gallery = gr.Gallery(
-                label="🎥 Tất cả videos (Click để xem to)",
-                show_label=True,
-                elem_id="video_gallery",
-                columns=3,  # 3 columns cho layout đẹp
-                rows=2,     # Hiển thị 2 rows mặc định
-                height="auto",
-                object_fit="contain"
+            selected_video = gr.Video(
+                label="📹 Video hiển thị ngay sau khi Flow tạo xong",
+                autoplay=True,
+                height=400,
+                show_label=True
             )
 
-            # Video player riêng cho video đang chọn
-            with gr.Row():
-                selected_video = gr.Video(
-                    label="🎬 Video đã chọn (Click vào gallery để xem)",
-                    autoplay=False,
-                    height=500
-                )
+            # Video gallery - hiển thị TẤT CẢ videos đã tạo
+            gr.Markdown("### 🎥 Tất cả videos đã tạo")
+
+            video_gallery = gr.Gallery(
+                label="Click vào video để xem lại",
+                show_label=False,
+                elem_id="video_gallery",
+                columns=4,
+                rows=2,
+                height="auto",
+                object_fit="contain",
+                interactive=False  # Read-only, không cho upload
+            )
 
             # Status details với expandable accordion
             with gr.Accordion("📊 Chi tiết trạng thái các cảnh", open=False):
                 scene_status = gr.JSON(label="Scene Details")
 
-        # Tab 3: Info
+        # Tab 3: Regenerate Scene
+        with gr.Tab("3️⃣ Tạo lại cảnh"):
+            gr.Markdown("""
+            ### 🔄 Regenerate Individual Scene
+            - Chọn số scene muốn tạo lại
+            - Click "Tạo lại" để regenerate với cùng prompt
+            - Video mới sẽ thay thế video cũ
+            """)
+
+            with gr.Row():
+                with gr.Column(scale=1):
+                    regenerate_scene_number = gr.Number(
+                        label="Số scene muốn tạo lại",
+                        value=1,
+                        minimum=1,
+                        step=1,
+                        precision=0
+                    )
+                    regenerate_btn = gr.Button("🔄 Tạo lại scene này", variant="primary", size="lg")
+
+                    regenerate_output = gr.Textbox(
+                        label="📋 Tiến trình",
+                        lines=20,
+                        max_lines=25,
+                        elem_classes="log-box"
+                    )
+
+                with gr.Column(scale=1):
+                    regenerate_screenshot = gr.Image(
+                        label="📸 Màn hình Comet",
+                        type="filepath",
+                        height=300
+                    )
+
+                    regenerate_video = gr.Video(
+                        label="🎬 Video mới",
+                        autoplay=True,
+                        height=300
+                    )
+
+            regenerate_gallery = gr.Gallery(
+                label="🎥 Tất cả videos (đã cập nhật)",
+                show_label=True,
+                columns=4,
+                rows=2,
+                height="auto",
+                interactive=False
+            )
+
+        # Tab 4: Info
         with gr.Tab("ℹ️ Hướng dẫn"):
             gr.Markdown("""
             ## 📖 Hướng dẫn sử dụng
@@ -459,7 +672,13 @@ with gr.Blocks(theme=gr.themes.Glass(), css=css, title="VEO 3.1 - Comet") as app
     produce_btn.click(
         fn=produce_videos_wrapper,
         inputs=[cookies_input],
-        outputs=[production_output, scene_status, current_scene_image, current_video]
+        outputs=[production_output, scene_status, current_scene_image, selected_video, video_gallery]
+    )
+
+    regenerate_btn.click(
+        fn=regenerate_single_scene,
+        inputs=[regenerate_scene_number, cookies_input],
+        outputs=[regenerate_output, regenerate_screenshot, regenerate_video, regenerate_gallery]
     )
 
 if __name__ == "__main__":
