@@ -1,546 +1,416 @@
+#!/usr/bin/env python3
 """
-VEO 3.1 - Complete UI với Scene Preview & Regenerate
+VEO 3.1 - Production UI (Final Version)
+- Card-based layout như reference
+- Log collapsed ở dưới
+- API key input
+- Duration tùy chỉnh
+- Regenerate + Delete buttons
 """
 
 import gradio as gr
-import os
 import asyncio
-import json
+import os
+import sys
 from datetime import datetime
-from dotenv import load_dotenv
 
-from src.script_generator import ScriptGenerator
-from src.browser_automation.flow_controller import FlowController
-from src.video_assembler import VideoAssembler
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
+
+from script_generator.gemini_generator import ScriptGenerator
+from browser_automation.flow_controller_selenium import FlowControllerSelenium
+from utils.detailed_logger import DetailedLogger
+from dotenv import load_dotenv
 
 load_dotenv()
 
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-script_generator = ScriptGenerator(GEMINI_API_KEY) if GEMINI_API_KEY else None
+DEFAULT_PROJECT_ID = "7527ed36-b1fb-4728-9cac-e42fc01698c4"
+DEFAULT_API_KEY = os.getenv("GEMINI_API_KEY", "")
 
-# Global state
-class ProjectState:
+css = """
+.scene-card {
+    border: 1px solid #374151;
+    border-radius: 12px;
+    padding: 20px;
+    margin: 12px 0;
+    background: #1f2937;
+}
+.prompt-box {
+    font-family: 'Courier New', monospace;
+    font-size: 13px;
+    background: #111827;
+    border: 1px solid #374151;
+    border-radius: 8px;
+    padding: 12px;
+    max-height: 300px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+}
+.status-success { color: #10b981; font-weight: bold; }
+.status-processing { color: #f59e0b; font-weight: bold; }
+.status-failed { color: #ef4444; font-weight: bold; }
+.log-box { font-family: 'Courier New', monospace; font-size: 12px; line-height: 1.6; }
+"""
+
+class AppState:
     def __init__(self):
         self.script = None
-        self.scenes = []  # List of scene data
-        self.project_dir = None
-        self.cookies = None
-        self.project_id = None  # Flow project ID
+        self.scenes = []
+        self.project_id = None
+        self.cookies_path = None
 
-state = ProjectState()
+state = AppState()
 
-# Step 1: Generate Script
-async def generate_script_async(topic, duration_minutes, cookies, project_id):
-    try:
-        if not script_generator:
-            return "❌ Chưa có API key", [], None
+def build_scenes_html():
+    """Build card-based HTML for scenes"""
+    if not state.scenes:
+        return "<p style='text-align: center; color: #9ca3af; padding: 40px;'>Chưa có cảnh nào</p>"
 
-        if not topic:
-            return "❌ Vui lòng nhập chủ đề", [], None
+    html = []
+    for scene in state.scenes:
+        status_class = {
+            'completed': 'status-success',
+            'processing': 'status-processing',
+            'failed': 'status-failed'
+        }.get(scene['status'], '')
 
-        # Convert minutes to seconds
-        duration = int(duration_minutes * 60)
+        status_text = {
+            'pending': '⏸️ Chưa tạo',
+            'processing': f"⏳ Đang tạo...",
+            'completed': '✅ Hoàn thành',
+            'failed': '❌ Thất bại'
+        }.get(scene['status'], '')
 
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        project_dir = f"./data/projects/{timestamp}"
-        os.makedirs(f"{project_dir}/videos", exist_ok=True)
-
-        script = script_generator.generate_script(
-            topic=topic,
-            duration=duration,
-            scene_duration=8,
-            style="Cinematic",
-            aspect_ratio="16:9"
-        )
-
-        # Save to state
-        state.script = script
-        state.project_dir = project_dir
-        state.cookies = cookies
-        state.project_id = project_id.strip() if project_id and project_id.strip() else None
-        state.scenes = []
-        
-        for i, scene in enumerate(script['scenes']):
-            state.scenes.append({
-                'number': i + 1,
-                'prompt': scene['veo_prompt'],
-                'description': scene['description'],
-                'duration': scene['duration'],
-                'status': 'pending',
-                'video_path': None,
-                'url': None
-            })
-        
-        summary = f"""✅ Kịch bản đã tạo!
-
-📝 {script['title']}
-🎬 {len(script['scenes'])} cảnh
-⏱️ {duration_minutes} phút ({duration}s)
-
-Nhấn "Tạo tất cả video" để bắt đầu!
-"""
-        
-        # Return scene data for UI update
-        scene_updates = []
-        for scene in state.scenes:
-            scene_updates.append({
-                'number': scene['number'],
-                'desc': scene['description'],
-                'status': '⏳ Chưa tạo'
-            })
-        
-        return summary, scene_updates, script
-        
-    except Exception as e:
-        return f"❌ Lỗi: {str(e)}", [], None
-
-def generate_script(topic, duration, cookies, project_id):
-    return asyncio.run(generate_script_async(topic, duration, cookies, project_id))
-
-# Step 2: Generate ALL videos
-async def generate_all_videos_async(progress=gr.Progress()):
-    try:
-        if not state.script or not state.scenes:
-            return "❌ Vui lòng tạo kịch bản trước", []
-
-        total_scenes = len(state.scenes)
-        status_lines = [
-            "="*60,
-            "🎬 BẮT ĐẦU SẢN XUẤT PHIM",
-            "="*60,
-            f"📝 Kịch bản: {state.script['title']}",
-            f"🎞️ Tổng số cảnh: {total_scenes}",
-            f"⏱️ Thời lượng: {state.script.get('total_duration', 0)}s",
-            "="*60,
-            ""
-        ]
-
-        controller = FlowController(state.cookies, f"{state.project_dir}/videos", headless=False)
-
-        status_lines.append("🚀 Khởi động browser...")
-        await controller.start()
-        status_lines.append("✅ Browser đã sẵn sàng")
-
-        status_lines.append("🌐 Đang vào trang Flow...")
-        await controller.goto_flow()
-        status_lines.append("✅ Đã vào trang Flow")
-
-        # Use existing project ID or create new
-        DEFAULT_PROJECT_ID = "125966c7-418b-49da-9978-49f0a62356de"
-
-        if state.project_id:
-            status_lines.append(f"📁 Sử dụng project có sẵn: {state.project_id}...")
-            success = await controller.goto_project(state.project_id)
-            if success:
-                status_lines.append("✅ Đã vào project")
-            else:
-                status_lines.append("❌ Không thể vào project. Vui lòng kiểm tra Project ID")
-                await controller.close()
-                return "\n".join(status_lines), []
+        video_html = ""
+        if scene.get('video_path'):
+            video_html = f"""
+            <video controls style="width: 100%; max-height: 400px; border-radius: 8px; background: #000;">
+                <source src="{scene['video_path']}" type="video/mp4">
+            </video>
+            <p class="status-success" style="margin-top: 8px;">✅ Video đã tạo thành công</p>
+            """
         else:
-            status_lines.append("📁 Đang tạo project mới...")
-            project_id = await controller.create_new_project(state.script['title'])
-            if project_id:
-                state.project_id = project_id
-                status_lines.append(f"✅ Project đã tạo: {project_id}")
-                await controller.goto_project(project_id)
-                status_lines.append("✅ Đã vào project")
-            else:
-                status_lines.append("⚠️ Không thể tạo project mới")
-                status_lines.append(f"📁 Dùng project mặc định: {DEFAULT_PROJECT_ID}")
-                state.project_id = DEFAULT_PROJECT_ID
-                success = await controller.goto_project(DEFAULT_PROJECT_ID)
-                if success:
-                    status_lines.append("✅ Đã vào project mặc định")
-                else:
-                    status_lines.append("❌ Không thể vào project mặc định")
-                    await controller.close()
-                    return "\n".join(status_lines), []
-        status_lines.append("")
+            video_html = f"<div style='text-align: center; padding: 80px; background: #111827; border-radius: 8px;'><p style='font-size: 18px;'>{status_text}</p></div>"
 
-        for i, scene_state in enumerate(state.scenes):
-            scene_num = scene_state['number']
-            progress((i / total_scenes), desc=f"🎬 Scene {scene_num}/{total_scenes}")
+        buttons_html = f"""
+        <div style="margin-top: 12px; display: flex; gap: 8px;">
+            <button onclick="regenerateScene({scene['number']})" 
+                    style="flex: 1; padding: 10px; background: #3b82f6; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: bold;">
+                🔄 Tạo lại
+            </button>
+            <button onclick="deleteScene({scene['number']})" 
+                    style="padding: 10px 20px; background: #ef4444; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: bold;">
+                🗑️ Xóa
+            </button>
+        </div>
+        """
 
-            status_lines.append(f"{'─'*60}")
-            status_lines.append(f"🎬 SCENE {scene_num}/{total_scenes}")
-            status_lines.append(f"📝 Mô tả: {scene_state['description'][:50]}...")
-            status_lines.append("")
+        html.append(f"""
+        <div class="scene-card">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                <h3 style="margin: 0; color: #f9fafb;">🎬 Phân cảnh {scene['number']}: {scene['description'][:60]}</h3>
+                <span class="{status_class}" style="font-size: 16px;">{status_text}</span>
+            </div>
+            
+            <div style="display: grid; grid-template-columns: 1fr 1.5fr; gap: 20px;">
+                <div>
+                    <h4 style="color: #d1d5db; margin-top: 0;">📝 Prompt cho Video</h4>
+                    <div class="prompt-box">{scene['prompt']}</div>
+                    {buttons_html}
+                </div>
+                <div>
+                    <h4 style="color: #d1d5db; margin-top: 0;">🎥 Media đã tạo</h4>
+                    {video_html}
+                </div>
+            </div>
+        </div>
+        """)
+
+    js_script = """
+    <script>
+    function regenerateScene(num) {
+        document.getElementById('regen-scene-num').value = num;
+        document.getElementById('regen-btn').click();
+    }
+    function deleteScene(num) {
+        if (confirm('Xóa cảnh ' + num + '?')) {
+            document.getElementById('delete-scene-num').value = num;
+            document.getElementById('delete-btn').click();
+        }
+    }
+    </script>
+    """
+
+    return "\n".join(html) + js_script
+
+async def generate_script_async(topic, duration, api_key, cookies, project_id):
+    """Generate script"""
+    try:
+        if not os.path.exists(cookies):
+            return f"❌ Cookie không tồn tại: {cookies}", ""
+
+        if not api_key:
+            return "❌ Thiếu API key", ""
+
+        generator = ScriptGenerator(api_key)
+        script = generator.generate_script(topic, duration * 60)
+
+        if not script or 'scenes' not in script:
+            return "❌ Không thể tạo kịch bản", ""
+
+        state.script = script
+        state.scenes = [
+            {
+                'number': i + 1,
+                'description': scene.get('description', f'Scene {i+1}'),
+                'prompt': scene.get('prompt', ''),
+                'status': 'pending',
+                'video_path': None
+            }
+            for i, scene in enumerate(script['scenes'])
+        ]
+        state.project_id = project_id or DEFAULT_PROJECT_ID
+        state.cookies_path = cookies
+
+        output = f"✅ {script.get('title', 'Kịch bản')}\n📝 {script.get('description', '')}\n🎬 {len(state.scenes)} cảnh"
+        return output, build_scenes_html()
+
+    except Exception as e:
+        return f"❌ Lỗi: {str(e)}", ""
+
+def produce_all_videos(progress=gr.Progress()):
+    """Produce all videos"""
+    if not state.scenes:
+        return "❌ Chưa có kịch bản!", ""
+
+    log = []
+    def add_log(msg):
+        log.append(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}")
+
+    add_log("🚀 Bắt đầu sản xuất")
+    add_log(f"🎬 Tổng: {len(state.scenes)} cảnh")
+
+    session = datetime.now().strftime("%Y%m%d_%H%M%S")
+    logger = DetailedLogger(session_name=session)
+
+    controller = FlowControllerSelenium(cookies_path=state.cookies_path, headless=False)
+
+    try:
+        progress(0.05, desc="🚀 Khởi động...")
+        controller.start()
+
+        # Use default project ID
+        project_id = DEFAULT_PROJECT_ID
+
+        progress(0.1, desc="📁 Vào project...")
+        add_log(f"📁 Sử dụng project: {project_id}")
+
+        success = controller.goto_project(project_id)
+
+        if success:
+            add_log(f"✅ Đã vào project {project_id}")
+            state.project_id = project_id
+        else:
+            add_log("❌ Không vào được project")
+            return state
+
+        add_log("✅ Sẵn sàng tạo video")
+
+        total = len(state.scenes)
+        for i, scene in enumerate(state.scenes):
+            num = scene['number']
+            start = datetime.now()
+
+            add_log(f"🎬 CẢNH {num}/{total}: {scene['description']}")
+            scene['status'] = 'processing'
+
+            def cb(elapsed, percent, screenshot):
+                progress((0.2 + (i/total)*0.7), desc=f"🎬 {num}/{total} - {percent}%")
+                if percent % 20 == 0:
+                    add_log(f"   📊 {percent}%")
 
             try:
-                # Create video
-                status_lines.append(f"   ⏳ Đang tạo video (VEO 3.1)...")
-                url = await controller.create_video_from_prompt(
-                    prompt=scene_state['prompt'],
+                url = controller.create_video_from_prompt(
+                    prompt=scene['prompt'],
                     aspect_ratio="16:9",
-                    is_first_video=(i == 0)  # First scene needs more wait time
+                    is_first_video=(i==0),
+                    progress_callback=cb
                 )
 
                 if url:
-                    status_lines.append(f"   ✅ Video đã tạo xong!")
-
-                    # SKIP DOWNLOAD FOR NOW - just mark as completed
-                    # Videos are on Flow, can download manually
-                    scene_state['status'] = 'completed'
-                    scene_state['url'] = url
-                    scene_state['video_path'] = f"Flow video #{scene_num}"
-
-                    status_lines.append(f"   ✅ Video có sẵn trên Flow")
-                    status_lines.append(f"   💡 Download manual từ Flow nếu cần")
-                    status_lines.append(f"   ✨ Scene {scene_num}: HOÀN THÀNH")
-
-                    # TODO: Implement download later
-                    # filepath = await controller.download_video_from_ui(...)
+                    dur = (datetime.now() - start).total_seconds()
+                    scene['status'] = 'completed'
+                    scene['video_path'] = url
+                    add_log(f"   ✅ Hoàn thành ({dur:.1f}s)")
+                    logger.scene_complete(num, url, dur)
                 else:
-                    scene_state['status'] = 'failed'
-                    status_lines.append(f"   ❌ Không thể tạo video")
-                    status_lines.append(f"   ⚠️ Scene {scene_num}: THẤT BẠI")
+                    scene['status'] = 'failed'
+                    add_log(f"   ❌ Thất bại")
 
             except Exception as e:
-                scene_state['status'] = 'failed'
-                status_lines.append(f"   ❌ Lỗi: {str(e)}")
-                status_lines.append(f"   ⚠️ Scene {scene_num}: THẤT BẠI")
+                scene['status'] = 'failed'
+                add_log(f"   ❌ Lỗi: {str(e)}")
 
-            status_lines.append("")
+        controller.close()
+        logger.close()
 
-        await controller.close()
-        status_lines.append("="*60)
-
-        # Count results
         completed = sum(1 for s in state.scenes if s['status'] == 'completed')
-        failed = total_scenes - completed
+        add_log(f"🎉 KẾT QUẢ: {completed}/{total} hoàn thành")
 
-        status_lines.append("📊 KẾT QUẢ CUỐI CÙNG")
-        status_lines.append("="*60)
-        status_lines.append(f"✅ Hoàn thành: {completed}/{total_scenes} cảnh")
-        if failed > 0:
-            status_lines.append(f"❌ Thất bại: {failed}/{total_scenes} cảnh")
-        status_lines.append("="*60)
+        progress(1.0, desc="✅ Xong!")
+        return "\n".join(log), build_scenes_html()
 
-        if completed == total_scenes:
-            status_lines.append("🎉 HOÀN THÀNH TOÀN BỘ! Chuyển sang tab 'Xem & tạo lại' để preview")
-        elif completed > 0:
-            status_lines.append("⚠️ Một số cảnh thất bại. Xem tab 'Xem & tạo lại' để tạo lại")
-        else:
-            status_lines.append("❌ Tất cả cảnh đều thất bại. Vui lòng kiểm tra cookies và thử lại")
-
-        status_lines.append("="*60)
-
-        # Prepare scene updates for UI
-        scene_updates = []
-        for scene in state.scenes:
-            scene_updates.append({
-                'number': scene['number'],
-                'video_path': scene['video_path'],
-                'status': '✅ Hoàn thành' if scene['status'] == 'completed' else '❌ Lỗi'
-            })
-
-        summary = "\n".join(status_lines)
-        return summary, scene_updates
-        
     except Exception as e:
-        return f"❌ Lỗi: {str(e)}", []
+        controller.close()
+        logger.close()
+        add_log(f"❌ Lỗi: {str(e)}")
+        return "\n".join(log), build_scenes_html()
 
-def generate_all_videos(progress=gr.Progress()):
-    return asyncio.run(generate_all_videos_async(progress))
-
-# Step 3: Regenerate single scene
-async def regenerate_scene_async(scene_num, progress=gr.Progress()):
+def regenerate_scene(scene_num, progress=gr.Progress()):
+    """Regenerate scene"""
     try:
-        if not state.scenes or scene_num < 1 or scene_num > len(state.scenes):
-            return f"❌ Scene {scene_num} không hợp lệ", None
+        num = int(scene_num)
+        if num < 1 or num > len(state.scenes):
+            return "❌ Scene không hợp lệ!", ""
 
-        scene_idx = scene_num - 1
-        scene_state = state.scenes[scene_idx]
-
+        scene = state.scenes[num - 1]
         log = []
-        log.append("="*60)
-        log.append(f"🔄 TẠO LẠI SCENE {scene_num}")
-        log.append("="*60)
-        log.append(f"📝 Mô tả: {scene_state['description']}")
-        log.append("")
+        def add_log(msg):
+            log.append(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}")
 
-        progress(0.1, desc=f"🚀 Khởi động browser...")
-        log.append("🚀 Khởi động browser...")
+        add_log(f"🔄 TẠO LẠI CẢNH {num}")
 
-        controller = FlowController(state.cookies, f"{state.project_dir}/videos", headless=False)
-        await controller.start()
-        log.append("✅ Browser đã sẵn sàng")
+        controller = FlowControllerSelenium(cookies_path=state.cookies_path, headless=False)
+        scene['status'] = 'processing'
 
-        log.append("🌐 Đang vào trang Flow...")
-        await controller.goto_flow()
-        log.append("✅ Đã vào trang Flow")
+        progress(0.1, desc="🚀 Khởi động...")
+        controller.start()
+        controller.goto_flow()
+        add_log("✅ Đã vào Flow homepage")
 
-        if state.project_id:
-            log.append(f"📁 Đang vào project: {state.project_id}...")
-            await controller.goto_project(state.project_id)
-            log.append("✅ Đã vào project")
-        else:
-            log.append("❌ Không tìm thấy project ID")
-            await controller.close()
-            return "\n".join(log), None
-        log.append("")
+        start = datetime.now()
 
-        progress(0.3, desc=f"⏳ Đang tạo video...")
-        log.append("⏳ Đang tạo video với VEO 3.1...")
+        def cb(elapsed, percent, screenshot):
+            progress(0.3 + (percent/100)*0.6, desc=f"🔄 {percent}%")
 
-        # Recreate video
-        url = await controller.create_video_from_prompt(
-            prompt=scene_state['prompt'],
-            aspect_ratio="16:9"
+        url = controller.create_video_from_prompt(
+            prompt=scene['prompt'],
+            aspect_ratio="16:9",
+            is_first_video=True,
+            progress_callback=cb
         )
 
         if url:
-            log.append("✅ Video đã tạo xong!")
-            log.append("")
-
-            progress(0.7, desc="📥 Đang download...")
-            log.append("📥 Đang download video (1080p)...")
-
-            filepath = await controller.download_video_from_ui(
-                filename=f"scene_{scene_num:03d}.mp4",
-                prompt_text=scene_state['description'],
-                quality="1080p"
-            )
-
-            if filepath:
-                scene_state['status'] = 'completed'
-                scene_state['video_path'] = filepath
-                scene_state['url'] = url
-
-                log.append("✅ Download hoàn tất!")
-                log.append(f"💾 Lưu tại: {os.path.basename(filepath)}")
-                log.append("")
-                log.append("="*60)
-                log.append(f"🎉 Scene {scene_num} đã được tạo lại thành công!")
-                log.append("="*60)
-
-                await controller.close()
-                return "\n".join(log), filepath
-
-        await controller.close()
-        log.append("❌ Không thể tạo video")
-        log.append("="*60)
-        return "\n".join(log), None
-
-    except Exception as e:
-        return f"❌ Lỗi: {str(e)}", None
-
-def regenerate_scene(scene_num, progress=gr.Progress()):
-    return asyncio.run(regenerate_scene_async(scene_num, progress))
-
-# Step 4: Assemble final video
-async def assemble_final_async(progress=gr.Progress()):
-    try:
-        if not state.scenes:
-            return "❌ Chưa có video", None
-
-        log = []
-        log.append("="*60)
-        log.append("🎞️ GHÉP PHIM HOÀN CHỈNH")
-        log.append("="*60)
-        log.append("")
-
-        video_files = []
-        for scene in state.scenes:
-            if scene['status'] == 'completed' and scene['video_path']:
-                video_files.append(scene['video_path'])
-                log.append(f"✅ Scene {scene['number']}: {os.path.basename(scene['video_path'])}")
-
-        log.append("")
-        log.append(f"📊 Tổng số cảnh: {len(video_files)}/{len(state.scenes)}")
-
-        if not video_files:
-            log.append("")
-            log.append("❌ Không có video hoàn thành nào để ghép")
-            log.append("="*60)
-            return "\n".join(log), None
-
-        log.append("")
-        log.append("="*60)
-        progress(0.3, desc="🔧 Chuẩn bị ghép video...")
-        log.append("🔧 Bắt đầu ghép video...")
-
-        final_path = f"{state.project_dir}/final.mp4"
-        assembler = VideoAssembler()
-
-        progress(0.5, desc="🎬 Đang nối video...")
-        log.append(f"🎬 Đang nối {len(video_files)} cảnh...")
-
-        result = assembler.assemble_videos(
-            video_files=video_files,
-            output_path=final_path,
-            script=state.script
-        )
-
-        if result:
-            log.append("✅ Nối video hoàn tất!")
-            log.append("")
-            log.append("="*60)
-            log.append("🎉 PHIM HOÀN CHỈNH!")
-            log.append("="*60)
-            log.append(f"📝 Tên phim: {state.script['title']}")
-            log.append(f"🎞️ Số cảnh: {len(video_files)}")
-            log.append(f"💾 Lưu tại: {final_path}")
-            log.append("="*60)
-            log.append("")
-            log.append("✨ Phim của bạn đã sẵn sàng! Tải về và thưởng thức!")
-            log.append("="*60)
-
-            return "\n".join(log), result
+            dur = (datetime.now() - start).total_seconds()
+            scene['status'] = 'completed'
+            scene['video_path'] = url
+            add_log(f"✅ Hoàn thành ({dur:.1f}s)")
         else:
-            log.append("❌ Lỗi khi nối video")
-            log.append("="*60)
-            return "\n".join(log), None
+            scene['status'] = 'failed'
+            add_log("❌ Thất bại")
+
+        controller.close()
+        progress(1.0, desc="✅ Xong!")
+        return "\n".join(log), build_scenes_html()
 
     except Exception as e:
-        return f"❌ Lỗi: {str(e)}", None
+        add_log(f"❌ Lỗi: {str(e)}")
+        return "\n".join(log), build_scenes_html()
 
-def assemble_final(progress=gr.Progress()):
-    return asyncio.run(assemble_final_async(progress))
+def delete_scene(scene_num):
+    """Delete scene"""
+    try:
+        num = int(scene_num)
+        state.scenes = [s for s in state.scenes if s['number'] != num]
+        for i, scene in enumerate(state.scenes):
+            scene['number'] = i + 1
+        return f"✅ Đã xóa cảnh {num}", build_scenes_html()
+    except:
+        return "❌ Lỗi xóa", ""
 
-# Modern CSS
-css = """
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
-* { font-family: 'Inter', sans-serif !important; }
+with gr.Blocks(theme=gr.themes.Soft(), css=css, title="VEO 3.1") as app:
+    gr.Markdown("# 🎬 VEO 3.1 - Production Tool")
 
-.gradio-container {
-    max-width: 1400px !important;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
-}
+    # Top setup section
+    with gr.Row():
+        with gr.Column(scale=2):
+            gr.Markdown("## ⚙️ Setup")
+            topic = gr.Textbox(label="🎯 Chủ đề phim", placeholder="Làm phở bò...")
+            
+            with gr.Row():
+                duration = gr.Number(label="⏱️ Thời lượng (phút)", value=1, minimum=0.5, maximum=10, step=0.5)
+                api_key = gr.Textbox(label="🔑 API Key", value=DEFAULT_API_KEY, type="password")
 
-.contain {
-    background: rgba(255,255,255,0.95) !important;
-    backdrop-filter: blur(10px) !important;
-    border-radius: 20px !important;
-    padding: 30px !important;
-    box-shadow: 0 8px 32px rgba(0,0,0,0.1) !important;
-}
+            with gr.Row():
+                project_id = gr.Textbox(label="📁 Project ID", value=DEFAULT_PROJECT_ID, scale=2)
+                cookies = gr.Textbox(label="🍪 Cookies", value="./cookie.txt", scale=1)
 
-.gr-button-primary {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
-    border: none !important;
-    color: white !important;
-    border-radius: 12px !important;
-    padding: 14px 28px !important;
-    font-weight: 600 !important;
-}
+            script_output = gr.Textbox(label="📋 Kết quả", lines=4, elem_classes="log-box")
 
-.gr-button-primary:hover {
-    transform: translateY(-2px) !important;
-    box-shadow: 0 8px 16px rgba(102,126,234,0.4) !important;
-}
+        with gr.Column(scale=1):
+            gr.Markdown("## 🎬 Actions")
+            generate_btn = gr.Button("📝 1. Tạo kịch bản", variant="primary", size="lg")
+            produce_btn = gr.Button("🎬 2. Tạo videos", variant="primary", size="lg")
+            gr.Markdown("---")
+            gr.Markdown("### 💡 Tips\n- Thời lượng: 0.5-10 phút\n- Export cookies từ Flow\n- Project ID từ URL Flow")
 
-h1 {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    font-weight: 700 !important;
-}
+    # Storyboard
+    gr.Markdown("## 🎬 Storyboard (Các phân cảnh)")
+    scenes_html = gr.HTML(value="<p style='text-align: center; color: #9ca3af; padding: 40px;'>Chưa có cảnh nào</p>")
 
-.scene-card {
-    border: 2px solid #e0e0e0;
-    border-radius: 12px;
-    padding: 15px;
-    margin: 10px 0;
-}
-"""
+    # Log at bottom (collapsed)
+    with gr.Accordion("📊 Log chi tiết", open=False):
+        log_output = gr.Textbox(label="", lines=15, elem_classes="log-box")
 
-# Create UI
-with gr.Blocks(theme=gr.themes.Glass(), css=css, title="VEO 3.1") as app:
-    
-    gr.Markdown("# 🎬 VEO 3.1 - Complete Auto")
-    
-    # Tab 1: Create
-    with gr.Tab("1️⃣ Tạo video"):
-        gr.Markdown("### Bước 1: Tạo kịch bản")
-        
-        with gr.Row():
-            topic = gr.Textbox(
-                label="✨ Chủ đề",
-                value="Hướng dẫn nấu món phở Việt Nam truyền thống",
-                lines=2
-            )
-            duration = gr.Slider(0.5, 3, 1, step=0.5, label="⏱️ Thời lượng (phút)")
+    # Hidden controls
+    with gr.Row(visible=False):
+        regen_scene_num = gr.Number(value=1, elem_id="regen-scene-num")
+        regen_btn_hidden = gr.Button("Regen", elem_id="regen-btn")
+        delete_scene_num = gr.Number(value=1, elem_id="delete-scene-num")
+        delete_btn_hidden = gr.Button("Delete", elem_id="delete-btn")
 
-        with gr.Row():
-            cookies = gr.Textbox(label="🔑 Cookies", value="./cookie.txt")
-            project_id_input = gr.Textbox(
-                label="📁 Project ID (Flow)",
-                value="125966c7-418b-49da-9978-49f0a62356de",
-                placeholder="Paste Project ID hoặc để mặc định"
-            )
-        
-        gen_script_btn = gr.Button("📝 Tạo kịch bản", variant="primary")
-        script_status = gr.Textbox(label="Trạng thái", lines=6)
-        
-        gr.Markdown("### Bước 2: Tạo tất cả video")
-        gen_all_btn = gr.Button("🎬 Tạo tất cả video", variant="primary", size="lg")
-        gen_status = gr.Textbox(label="Tiến trình", lines=10)
-        
-        # Hidden components for state
-        script_data = gr.State(None)
-        scene_data = gr.State([])
-        
-        gen_script_btn.click(
-            fn=generate_script,
-            inputs=[topic, duration, cookies, project_id_input],
-            outputs=[script_status, scene_data, script_data]
-        )
-        
-        gen_all_btn.click(
-            fn=generate_all_videos,
-            inputs=[],
-            outputs=[gen_status, scene_data]
-        )
-    
-    # Tab 2: Preview & Regenerate
-    with gr.Tab("2️⃣ Xem & tạo lại"):
-        gr.Markdown("### Xem video từng cảnh & tạo lại nếu cần")
-        
-        # Create 10 scene slots
-        for i in range(10):
-            with gr.Group(visible=False) as scene_group:
-                gr.Markdown(f"## Scene {i+1}")
-                
-                with gr.Row():
-                    with gr.Column(scale=2):
-                        video_player = gr.Video(label=f"Video Scene {i+1}")
-                    with gr.Column(scale=1):
-                        scene_desc = gr.Textbox(label="Mô tả", lines=3)
-                        scene_status = gr.Textbox(label="Trạng thái")
-                        regen_btn = gr.Button(f"🔄 Tạo lại Scene {i+1}")
-                        regen_status = gr.Textbox(label="Kết quả", lines=2)
-                
-                # Regenerate handler
-                regen_btn.click(
-                    fn=lambda: regenerate_scene(i+1),
-                    inputs=[],
-                    outputs=[regen_status, video_player]
-                )
-    
-    # Tab 3: Final
-    with gr.Tab("3️⃣ Video cuối"):
-        gr.Markdown("### Nối tất cả cảnh thành video hoàn chỉnh")
-        
-        assemble_btn = gr.Button("🎞️ Nối video", variant="primary", size="lg")
-        final_status = gr.Textbox(label="Trạng thái", lines=3)
-        final_video = gr.Video(label="Video hoàn chỉnh")
-        
-        assemble_btn.click(
-            fn=assemble_final,
-            inputs=[],
-            outputs=[final_status, final_video]
-        )
-    
-    gr.Markdown("""
-    ---
-    <div style='text-align:center; color:#666; padding:10px;'>
-    ✅ API: OK | 🔑 Cookies: cookie.txt | 🎨 Modern Glass Theme
-    </div>
-    """)
+    # Event handlers
+    def gen_wrapper(t, d, a, c, p):
+        return asyncio.run(generate_script_async(t, d, a, c, p))
+
+    generate_btn.click(
+        fn=gen_wrapper,
+        inputs=[topic, duration, api_key, cookies, project_id],
+        outputs=[script_output, scenes_html]
+    )
+
+    produce_btn.click(
+        fn=produce_all_videos,
+        inputs=[],
+        outputs=[log_output, scenes_html]
+    )
+
+    regen_btn_hidden.click(
+        fn=regenerate_scene,
+        inputs=[regen_scene_num],
+        outputs=[log_output, scenes_html]
+    )
+
+    delete_btn_hidden.click(
+        fn=delete_scene,
+        inputs=[delete_scene_num],
+        outputs=[log_output, scenes_html]
+    )
 
 if __name__ == "__main__":
-    print("🎬 VEO 3.1 Complete")
-    print("URL: http://localhost:7860")
-    app.launch(server_name="0.0.0.0", server_port=7860, share=False)
+    print("="*60)
+    print("🎬 VEO 3.1 - Production Tool (Final)")
+    print("="*60)
+    print("✨ Card-based UI")
+    print("📊 Log collapsed at bottom")
+    print("🔑 API key input")
+    print("⏱️ Duration: 0.5-10 phút")
+    print("="*60)
+    print("🌐 http://localhost:7860")
+    print("="*60)
+
+    app.queue().launch(
+        server_name="0.0.0.0",
+        server_port=7860,
+        share=False,
+        show_error=True
+    )

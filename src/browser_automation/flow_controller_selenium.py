@@ -141,9 +141,45 @@ class FlowControllerSelenium:
             return False
 
     def create_new_project(self, title: str) -> Optional[str]:
-        """Create a new project (placeholder - not fully implemented)"""
-        logger.warning("⚠️  Project creation not implemented in Selenium version")
-        return None
+        """
+        Create a new project by navigating to new UUID URL
+        Flow auto-creates project when you navigate to /project/{UUID}
+
+        Args:
+            title: Project title (not used, just for reference)
+
+        Returns:
+            Project ID (UUID) if successful, None otherwise
+        """
+        try:
+            import uuid
+
+            # Generate UUID v4
+            project_id = str(uuid.uuid4()).upper()
+
+            # Navigate to new project URL (Flow auto-creates project)
+            project_url = f"https://labs.google/fx/vi/tools/flow/project/{project_id}"
+            logger.info(f"   📁 Creating project with ID: {project_id}")
+            logger.info(f"   🌐 Navigating to: {project_url}")
+
+            self.driver.get(project_url)
+
+            # Wait for Flow to initialize the project
+            time.sleep(5)
+
+            # Verify we're on the project page
+            if "project" in self.driver.current_url and project_id in self.driver.current_url:
+                logger.info(f"   ✅ Project created successfully: {project_id}")
+                return project_id
+            else:
+                logger.error(f"   ❌ Failed to create project. Current URL: {self.driver.current_url}")
+                return None
+
+        except Exception as e:
+            logger.error(f"   ❌ Error creating project: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return None
 
     def create_video_from_prompt(
         self,
