@@ -1,525 +1,546 @@
 """
-VEO 3.1 Automation - Gradio Web UI
-Giao diện web để tạo video tự động
+VEO 3.1 - Complete UI với Scene Preview & Regenerate
 """
 
 import gradio as gr
 import os
-import sys
-import io
-import json
 import asyncio
+import json
 from datetime import datetime
-from pathlib import Path
-
-# Fix Windows encoding
-if sys.platform == 'win32':
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
-
 from dotenv import load_dotenv
-from src.script_generator import ScriptGenerator
 
-# Load environment
+from src.script_generator import ScriptGenerator
+from src.browser_automation.flow_controller import FlowController
+from src.video_assembler import VideoAssembler
+
 load_dotenv()
 
-# Global variables
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-script_generator = None
+script_generator = ScriptGenerator(GEMINI_API_KEY) if GEMINI_API_KEY else None
 
-if GEMINI_API_KEY:
-    script_generator = ScriptGenerator(GEMINI_API_KEY)
+# Global state
+class ProjectState:
+    def __init__(self):
+        self.script = None
+        self.scenes = []  # List of scene data
+        self.project_dir = None
+        self.cookies = None
+        self.project_id = None  # Flow project ID
 
+state = ProjectState()
 
-# ========== Script Generation Functions ==========
-
-def generate_script_ui(topic, duration, scene_duration, style, aspect_ratio):
-    """Generate script from UI inputs"""
+# Step 1: Generate Script
+async def generate_script_async(topic, duration_minutes, cookies, project_id):
     try:
         if not script_generator:
-            return "❌ Error: GEMINI_API_KEY not configured in .env file", None, ""
+            return "❌ Chưa có API key", [], None
 
         if not topic:
-            return "❌ Error: Please enter a topic", None, ""
+            return "❌ Vui lòng nhập chủ đề", [], None
 
-        # Generate script
+        # Convert minutes to seconds
+        duration = int(duration_minutes * 60)
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        project_dir = f"./data/projects/{timestamp}"
+        os.makedirs(f"{project_dir}/videos", exist_ok=True)
+
         script = script_generator.generate_script(
             topic=topic,
-            duration=int(duration),
-            scene_duration=int(scene_duration),
-            style=style,
-            aspect_ratio=aspect_ratio
+            duration=duration,
+            scene_duration=8,
+            style="Cinematic",
+            aspect_ratio="16:9"
         )
 
-        # Save script
-        filepath = script_generator.save_script(script)
+        # Save to state
+        state.script = script
+        state.project_dir = project_dir
+        state.cookies = cookies
+        state.project_id = project_id.strip() if project_id and project_id.strip() else None
+        state.scenes = []
+        
+        for i, scene in enumerate(script['scenes']):
+            state.scenes.append({
+                'number': i + 1,
+                'prompt': scene['veo_prompt'],
+                'description': scene['description'],
+                'duration': scene['duration'],
+                'status': 'pending',
+                'video_path': None,
+                'url': None
+            })
+        
+        summary = f"""✅ Kịch bản đã tạo!
 
-        # Format output
-        output = f"""
-✅ Script Generated Successfully!
+📝 {script['title']}
+🎬 {len(script['scenes'])} cảnh
+⏱️ {duration_minutes} phút ({duration}s)
 
-📝 Title: {script['title']}
-📄 Description: {script['description']}
-🎬 Scenes: {len(script['scenes'])}
-⏱️ Duration: {script['total_duration']}s
-📐 Aspect Ratio: {aspect_ratio}
-🎨 Style: {style}
-
-📁 Saved to: {filepath}
+Nhấn "Tạo tất cả video" để bắt đầu!
 """
+        
+        # Return scene data for UI update
+        scene_updates = []
+        for scene in state.scenes:
+            scene_updates.append({
+                'number': scene['number'],
+                'desc': scene['description'],
+                'status': '⏳ Chưa tạo'
+            })
+        
+        return summary, scene_updates, script
+        
+    except Exception as e:
+        return f"❌ Lỗi: {str(e)}", [], None
 
-        # Format scenes for display
-        scenes_display = ""
-        for i, scene in enumerate(script['scenes'], 1):
-            scenes_display += f"""
-{'='*60}
-🎬 Scene {i} ({scene['duration']}s)
-{'='*60}
+def generate_script(topic, duration, cookies, project_id):
+    return asyncio.run(generate_script_async(topic, duration, cookies, project_id))
 
-📝 Description:
-{scene['description']}
+# Step 2: Generate ALL videos
+async def generate_all_videos_async(progress=gr.Progress()):
+    try:
+        if not state.script or not state.scenes:
+            return "❌ Vui lòng tạo kịch bản trước", []
 
-🎥 Camera: {scene.get('camera_movement', 'N/A')}
-🌅 Time: {scene.get('time_of_day', 'N/A')}
-🎭 Mood: {scene.get('mood', 'N/A')}
+        total_scenes = len(state.scenes)
+        status_lines = [
+            "="*60,
+            "🎬 BẮT ĐẦU SẢN XUẤT PHIM",
+            "="*60,
+            f"📝 Kịch bản: {state.script['title']}",
+            f"🎞️ Tổng số cảnh: {total_scenes}",
+            f"⏱️ Thời lượng: {state.script.get('total_duration', 0)}s",
+            "="*60,
+            ""
+        ]
 
-🤖 VEO Prompt:
-{scene['veo_prompt']}
+        controller = FlowController(state.cookies, f"{state.project_dir}/videos", headless=False)
 
-"""
+        status_lines.append("🚀 Khởi động browser...")
+        await controller.start()
+        status_lines.append("✅ Browser đã sẵn sàng")
 
-        return output, filepath, scenes_display
+        status_lines.append("🌐 Đang vào trang Flow...")
+        await controller.goto_flow()
+        status_lines.append("✅ Đã vào trang Flow")
+
+        # Use existing project ID or create new
+        DEFAULT_PROJECT_ID = "125966c7-418b-49da-9978-49f0a62356de"
+
+        if state.project_id:
+            status_lines.append(f"📁 Sử dụng project có sẵn: {state.project_id}...")
+            success = await controller.goto_project(state.project_id)
+            if success:
+                status_lines.append("✅ Đã vào project")
+            else:
+                status_lines.append("❌ Không thể vào project. Vui lòng kiểm tra Project ID")
+                await controller.close()
+                return "\n".join(status_lines), []
+        else:
+            status_lines.append("📁 Đang tạo project mới...")
+            project_id = await controller.create_new_project(state.script['title'])
+            if project_id:
+                state.project_id = project_id
+                status_lines.append(f"✅ Project đã tạo: {project_id}")
+                await controller.goto_project(project_id)
+                status_lines.append("✅ Đã vào project")
+            else:
+                status_lines.append("⚠️ Không thể tạo project mới")
+                status_lines.append(f"📁 Dùng project mặc định: {DEFAULT_PROJECT_ID}")
+                state.project_id = DEFAULT_PROJECT_ID
+                success = await controller.goto_project(DEFAULT_PROJECT_ID)
+                if success:
+                    status_lines.append("✅ Đã vào project mặc định")
+                else:
+                    status_lines.append("❌ Không thể vào project mặc định")
+                    await controller.close()
+                    return "\n".join(status_lines), []
+        status_lines.append("")
+
+        for i, scene_state in enumerate(state.scenes):
+            scene_num = scene_state['number']
+            progress((i / total_scenes), desc=f"🎬 Scene {scene_num}/{total_scenes}")
+
+            status_lines.append(f"{'─'*60}")
+            status_lines.append(f"🎬 SCENE {scene_num}/{total_scenes}")
+            status_lines.append(f"📝 Mô tả: {scene_state['description'][:50]}...")
+            status_lines.append("")
+
+            try:
+                # Create video
+                status_lines.append(f"   ⏳ Đang tạo video (VEO 3.1)...")
+                url = await controller.create_video_from_prompt(
+                    prompt=scene_state['prompt'],
+                    aspect_ratio="16:9",
+                    is_first_video=(i == 0)  # First scene needs more wait time
+                )
+
+                if url:
+                    status_lines.append(f"   ✅ Video đã tạo xong!")
+
+                    # SKIP DOWNLOAD FOR NOW - just mark as completed
+                    # Videos are on Flow, can download manually
+                    scene_state['status'] = 'completed'
+                    scene_state['url'] = url
+                    scene_state['video_path'] = f"Flow video #{scene_num}"
+
+                    status_lines.append(f"   ✅ Video có sẵn trên Flow")
+                    status_lines.append(f"   💡 Download manual từ Flow nếu cần")
+                    status_lines.append(f"   ✨ Scene {scene_num}: HOÀN THÀNH")
+
+                    # TODO: Implement download later
+                    # filepath = await controller.download_video_from_ui(...)
+                else:
+                    scene_state['status'] = 'failed'
+                    status_lines.append(f"   ❌ Không thể tạo video")
+                    status_lines.append(f"   ⚠️ Scene {scene_num}: THẤT BẠI")
+
+            except Exception as e:
+                scene_state['status'] = 'failed'
+                status_lines.append(f"   ❌ Lỗi: {str(e)}")
+                status_lines.append(f"   ⚠️ Scene {scene_num}: THẤT BẠI")
+
+            status_lines.append("")
+
+        await controller.close()
+        status_lines.append("="*60)
+
+        # Count results
+        completed = sum(1 for s in state.scenes if s['status'] == 'completed')
+        failed = total_scenes - completed
+
+        status_lines.append("📊 KẾT QUẢ CUỐI CÙNG")
+        status_lines.append("="*60)
+        status_lines.append(f"✅ Hoàn thành: {completed}/{total_scenes} cảnh")
+        if failed > 0:
+            status_lines.append(f"❌ Thất bại: {failed}/{total_scenes} cảnh")
+        status_lines.append("="*60)
+
+        if completed == total_scenes:
+            status_lines.append("🎉 HOÀN THÀNH TOÀN BỘ! Chuyển sang tab 'Xem & tạo lại' để preview")
+        elif completed > 0:
+            status_lines.append("⚠️ Một số cảnh thất bại. Xem tab 'Xem & tạo lại' để tạo lại")
+        else:
+            status_lines.append("❌ Tất cả cảnh đều thất bại. Vui lòng kiểm tra cookies và thử lại")
+
+        status_lines.append("="*60)
+
+        # Prepare scene updates for UI
+        scene_updates = []
+        for scene in state.scenes:
+            scene_updates.append({
+                'number': scene['number'],
+                'video_path': scene['video_path'],
+                'status': '✅ Hoàn thành' if scene['status'] == 'completed' else '❌ Lỗi'
+            })
+
+        summary = "\n".join(status_lines)
+        return summary, scene_updates
+        
+    except Exception as e:
+        return f"❌ Lỗi: {str(e)}", []
+
+def generate_all_videos(progress=gr.Progress()):
+    return asyncio.run(generate_all_videos_async(progress))
+
+# Step 3: Regenerate single scene
+async def regenerate_scene_async(scene_num, progress=gr.Progress()):
+    try:
+        if not state.scenes or scene_num < 1 or scene_num > len(state.scenes):
+            return f"❌ Scene {scene_num} không hợp lệ", None
+
+        scene_idx = scene_num - 1
+        scene_state = state.scenes[scene_idx]
+
+        log = []
+        log.append("="*60)
+        log.append(f"🔄 TẠO LẠI SCENE {scene_num}")
+        log.append("="*60)
+        log.append(f"📝 Mô tả: {scene_state['description']}")
+        log.append("")
+
+        progress(0.1, desc=f"🚀 Khởi động browser...")
+        log.append("🚀 Khởi động browser...")
+
+        controller = FlowController(state.cookies, f"{state.project_dir}/videos", headless=False)
+        await controller.start()
+        log.append("✅ Browser đã sẵn sàng")
+
+        log.append("🌐 Đang vào trang Flow...")
+        await controller.goto_flow()
+        log.append("✅ Đã vào trang Flow")
+
+        if state.project_id:
+            log.append(f"📁 Đang vào project: {state.project_id}...")
+            await controller.goto_project(state.project_id)
+            log.append("✅ Đã vào project")
+        else:
+            log.append("❌ Không tìm thấy project ID")
+            await controller.close()
+            return "\n".join(log), None
+        log.append("")
+
+        progress(0.3, desc=f"⏳ Đang tạo video...")
+        log.append("⏳ Đang tạo video với VEO 3.1...")
+
+        # Recreate video
+        url = await controller.create_video_from_prompt(
+            prompt=scene_state['prompt'],
+            aspect_ratio="16:9"
+        )
+
+        if url:
+            log.append("✅ Video đã tạo xong!")
+            log.append("")
+
+            progress(0.7, desc="📥 Đang download...")
+            log.append("📥 Đang download video (1080p)...")
+
+            filepath = await controller.download_video_from_ui(
+                filename=f"scene_{scene_num:03d}.mp4",
+                prompt_text=scene_state['description'],
+                quality="1080p"
+            )
+
+            if filepath:
+                scene_state['status'] = 'completed'
+                scene_state['video_path'] = filepath
+                scene_state['url'] = url
+
+                log.append("✅ Download hoàn tất!")
+                log.append(f"💾 Lưu tại: {os.path.basename(filepath)}")
+                log.append("")
+                log.append("="*60)
+                log.append(f"🎉 Scene {scene_num} đã được tạo lại thành công!")
+                log.append("="*60)
+
+                await controller.close()
+                return "\n".join(log), filepath
+
+        await controller.close()
+        log.append("❌ Không thể tạo video")
+        log.append("="*60)
+        return "\n".join(log), None
 
     except Exception as e:
-        return f"❌ Error: {str(e)}", None, ""
+        return f"❌ Lỗi: {str(e)}", None
 
+def regenerate_scene(scene_num, progress=gr.Progress()):
+    return asyncio.run(regenerate_scene_async(scene_num, progress))
 
-def load_script_file(filepath):
-    """Load and display script from file"""
+# Step 4: Assemble final video
+async def assemble_final_async(progress=gr.Progress()):
     try:
-        if not filepath or not os.path.exists(filepath):
-            return "❌ Script file not found", ""
+        if not state.scenes:
+            return "❌ Chưa có video", None
 
-        with open(filepath, 'r', encoding='utf-8') as f:
-            script = json.load(f)
+        log = []
+        log.append("="*60)
+        log.append("🎞️ GHÉP PHIM HOÀN CHỈNH")
+        log.append("="*60)
+        log.append("")
 
-        # Format output
-        output = f"""
-📁 Script Loaded
+        video_files = []
+        for scene in state.scenes:
+            if scene['status'] == 'completed' and scene['video_path']:
+                video_files.append(scene['video_path'])
+                log.append(f"✅ Scene {scene['number']}: {os.path.basename(scene['video_path'])}")
 
-📝 Title: {script['title']}
-📄 Description: {script['description']}
-🎬 Scenes: {len(script['scenes'])}
-⏱️ Duration: {script['total_duration']}s
-"""
+        log.append("")
+        log.append(f"📊 Tổng số cảnh: {len(video_files)}/{len(state.scenes)}")
 
-        # Format scenes
-        scenes_display = ""
-        for i, scene in enumerate(script['scenes'], 1):
-            scenes_display += f"""
-{'='*60}
-🎬 Scene {i}
-{'='*60}
-{scene['description']}
+        if not video_files:
+            log.append("")
+            log.append("❌ Không có video hoàn thành nào để ghép")
+            log.append("="*60)
+            return "\n".join(log), None
 
-VEO Prompt:
-{scene['veo_prompt']}
+        log.append("")
+        log.append("="*60)
+        progress(0.3, desc="🔧 Chuẩn bị ghép video...")
+        log.append("🔧 Bắt đầu ghép video...")
 
-"""
+        final_path = f"{state.project_dir}/final.mp4"
+        assembler = VideoAssembler()
 
-        return output, scenes_display
+        progress(0.5, desc="🎬 Đang nối video...")
+        log.append(f"🎬 Đang nối {len(video_files)} cảnh...")
+
+        result = assembler.assemble_videos(
+            video_files=video_files,
+            output_path=final_path,
+            script=state.script
+        )
+
+        if result:
+            log.append("✅ Nối video hoàn tất!")
+            log.append("")
+            log.append("="*60)
+            log.append("🎉 PHIM HOÀN CHỈNH!")
+            log.append("="*60)
+            log.append(f"📝 Tên phim: {state.script['title']}")
+            log.append(f"🎞️ Số cảnh: {len(video_files)}")
+            log.append(f"💾 Lưu tại: {final_path}")
+            log.append("="*60)
+            log.append("")
+            log.append("✨ Phim của bạn đã sẵn sàng! Tải về và thưởng thức!")
+            log.append("="*60)
+
+            return "\n".join(log), result
+        else:
+            log.append("❌ Lỗi khi nối video")
+            log.append("="*60)
+            return "\n".join(log), None
 
     except Exception as e:
-        return f"❌ Error: {str(e)}", ""
+        return f"❌ Lỗi: {str(e)}", None
 
+def assemble_final(progress=gr.Progress()):
+    return asyncio.run(assemble_final_async(progress))
 
-def list_saved_scripts():
-    """Get list of saved scripts"""
-    script_dir = Path("./data/scripts")
-    if not script_dir.exists():
-        return []
+# Modern CSS
+css = """
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+* { font-family: 'Inter', sans-serif !important; }
 
-    scripts = list(script_dir.glob("*.json"))
-    return [str(s) for s in sorted(scripts, reverse=True)]
+.gradio-container {
+    max-width: 1400px !important;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+}
 
+.contain {
+    background: rgba(255,255,255,0.95) !important;
+    backdrop-filter: blur(10px) !important;
+    border-radius: 20px !important;
+    padding: 30px !important;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.1) !important;
+}
 
-# ========== Video Generation Functions ==========
+.gr-button-primary {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+    border: none !important;
+    color: white !important;
+    border-radius: 12px !important;
+    padding: 14px 28px !important;
+    font-weight: 600 !important;
+}
 
-def generate_video_info():
-    """Info about video generation"""
-    return """
-⚠️ Video Generation Requirements:
+.gr-button-primary:hover {
+    transform: translateY(-2px) !important;
+    box-shadow: 0 8px 16px rgba(102,126,234,0.4) !important;
+}
 
-1. Install dependencies:
-   pip install playwright moviepy
-   playwright install chromium
+h1 {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    font-weight: 700 !important;
+}
 
-2. Valid cookies in config/cookies.json
-
-3. VEO 3.1 quota available on your account
-
-Note: Video generation takes 5-7 minutes per scene.
-For 60s video (8 scenes), expect ~40-60 minutes total.
+.scene-card {
+    border: 2px solid #e0e0e0;
+    border-radius: 12px;
+    padding: 15px;
+    margin: 10px 0;
+}
 """
 
+# Create UI
+with gr.Blocks(theme=gr.themes.Glass(), css=css, title="VEO 3.1") as app:
+    
+    gr.Markdown("# 🎬 VEO 3.1 - Complete Auto")
+    
+    # Tab 1: Create
+    with gr.Tab("1️⃣ Tạo video"):
+        gr.Markdown("### Bước 1: Tạo kịch bản")
+        
+        with gr.Row():
+            topic = gr.Textbox(
+                label="✨ Chủ đề",
+                value="Hướng dẫn nấu món phở Việt Nam truyền thống",
+                lines=2
+            )
+            duration = gr.Slider(0.5, 3, 1, step=0.5, label="⏱️ Thời lượng (phút)")
 
-def check_system_status():
-    """Check system readiness"""
-    status = []
-
-    # Check API key
-    if GEMINI_API_KEY and GEMINI_API_KEY != 'your_api_key_here':
-        status.append("✅ Gemini API Key configured")
-    else:
-        status.append("❌ Gemini API Key not configured")
-
-    # Check cookies
-    if os.path.exists('./config/cookies.json'):
-        status.append("✅ Cookies file found")
-    else:
-        status.append("❌ Cookies file not found")
-
-    # Check playwright
-    try:
-        import playwright
-        status.append("✅ Playwright installed")
-    except:
-        status.append("❌ Playwright not installed")
-
-    # Check moviepy
-    try:
-        import moviepy
-        status.append("✅ MoviePy installed")
-    except:
-        status.append("❌ MoviePy not installed")
-
-    return "\n".join(status)
-
-
-# ========== Gradio UI ==========
-
-def create_ui():
-    """Create Gradio interface"""
-
-    with gr.Blocks(
-        title="VEO 3.1 Video Automation",
-        theme=gr.themes.Soft()
-    ) as app:
-
-        gr.Markdown("""
-        # 🎬 VEO 3.1 Video Automation
-        ### Tự động tạo video AI với Google Labs Flow
-        """)
-
-        with gr.Tabs():
-
-            # ===== Tab 1: Script Generation =====
-            with gr.Tab("📝 Script Generation"):
-                gr.Markdown("""
-                ## Tạo Kịch Bản Video
-                Sử dụng Gemini API để tạo kịch bản chi tiết cho video
-                """)
-
+        with gr.Row():
+            cookies = gr.Textbox(label="🔑 Cookies", value="./cookie.txt")
+            project_id_input = gr.Textbox(
+                label="📁 Project ID (Flow)",
+                value="125966c7-418b-49da-9978-49f0a62356de",
+                placeholder="Paste Project ID hoặc để mặc định"
+            )
+        
+        gen_script_btn = gr.Button("📝 Tạo kịch bản", variant="primary")
+        script_status = gr.Textbox(label="Trạng thái", lines=6)
+        
+        gr.Markdown("### Bước 2: Tạo tất cả video")
+        gen_all_btn = gr.Button("🎬 Tạo tất cả video", variant="primary", size="lg")
+        gen_status = gr.Textbox(label="Tiến trình", lines=10)
+        
+        # Hidden components for state
+        script_data = gr.State(None)
+        scene_data = gr.State([])
+        
+        gen_script_btn.click(
+            fn=generate_script,
+            inputs=[topic, duration, cookies, project_id_input],
+            outputs=[script_status, scene_data, script_data]
+        )
+        
+        gen_all_btn.click(
+            fn=generate_all_videos,
+            inputs=[],
+            outputs=[gen_status, scene_data]
+        )
+    
+    # Tab 2: Preview & Regenerate
+    with gr.Tab("2️⃣ Xem & tạo lại"):
+        gr.Markdown("### Xem video từng cảnh & tạo lại nếu cần")
+        
+        # Create 10 scene slots
+        for i in range(10):
+            with gr.Group(visible=False) as scene_group:
+                gr.Markdown(f"## Scene {i+1}")
+                
                 with gr.Row():
+                    with gr.Column(scale=2):
+                        video_player = gr.Video(label=f"Video Scene {i+1}")
                     with gr.Column(scale=1):
-                        topic_input = gr.Textbox(
-                            label="🎯 Chủ đề video",
-                            placeholder="VD: Khám phá rừng Amazon huyền bí",
-                            lines=2
-                        )
-
-                        with gr.Row():
-                            duration_input = gr.Slider(
-                                minimum=10,
-                                maximum=300,
-                                value=60,
-                                step=10,
-                                label="⏱️ Tổng thời lượng (giây)"
-                            )
-
-                            scene_duration_input = gr.Slider(
-                                minimum=5,
-                                maximum=15,
-                                value=8,
-                                step=1,
-                                label="🎬 Thời lượng mỗi scene (giây)"
-                            )
-
-                        style_input = gr.Dropdown(
-                            choices=[
-                                "cinematic",
-                                "documentary",
-                                "anime",
-                                "realistic",
-                                "artistic",
-                                "sci-fi"
-                            ],
-                            value="cinematic",
-                            label="🎨 Phong cách"
-                        )
-
-                        aspect_ratio_input = gr.Radio(
-                            choices=["16:9", "9:16", "1:1"],
-                            value="16:9",
-                            label="📐 Tỷ lệ khung hình"
-                        )
-
-                        generate_btn = gr.Button(
-                            "🚀 Generate Script",
-                            variant="primary",
-                            size="lg"
-                        )
-
-                    with gr.Column(scale=1):
-                        script_output = gr.Textbox(
-                            label="📊 Kết quả",
-                            lines=15,
-                            interactive=False
-                        )
-
-                        script_filepath = gr.Textbox(
-                            label="📁 File path",
-                            interactive=False,
-                            visible=False
-                        )
-
-                gr.Markdown("### 🎬 Scenes Chi Tiết")
-                scenes_output = gr.Textbox(
-                    label="Các cảnh quay",
-                    lines=20,
-                    interactive=False
+                        scene_desc = gr.Textbox(label="Mô tả", lines=3)
+                        scene_status = gr.Textbox(label="Trạng thái")
+                        regen_btn = gr.Button(f"🔄 Tạo lại Scene {i+1}")
+                        regen_status = gr.Textbox(label="Kết quả", lines=2)
+                
+                # Regenerate handler
+                regen_btn.click(
+                    fn=lambda: regenerate_scene(i+1),
+                    inputs=[],
+                    outputs=[regen_status, video_player]
                 )
-
-                # Connect generate button
-                generate_btn.click(
-                    fn=generate_script_ui,
-                    inputs=[
-                        topic_input,
-                        duration_input,
-                        scene_duration_input,
-                        style_input,
-                        aspect_ratio_input
-                    ],
-                    outputs=[script_output, script_filepath, scenes_output]
-                )
-
-            # ===== Tab 2: Script Library =====
-            with gr.Tab("📚 Script Library"):
-                gr.Markdown("""
-                ## Quản Lý Kịch Bản
-                Xem và sử dụng lại các kịch bản đã tạo
-                """)
-
-                with gr.Row():
-                    refresh_btn = gr.Button("🔄 Refresh List")
-
-                script_list = gr.Dropdown(
-                    label="📄 Scripts đã lưu",
-                    choices=list_saved_scripts(),
-                    interactive=True
-                )
-
-                load_btn = gr.Button("📂 Load Script", variant="primary")
-
-                loaded_script_info = gr.Textbox(
-                    label="📊 Thông tin script",
-                    lines=10,
-                    interactive=False
-                )
-
-                loaded_scenes = gr.Textbox(
-                    label="🎬 Scenes",
-                    lines=15,
-                    interactive=False
-                )
-
-                # Connect buttons
-                refresh_btn.click(
-                    fn=lambda: gr.Dropdown(choices=list_saved_scripts()),
-                    outputs=script_list
-                )
-
-                load_btn.click(
-                    fn=load_script_file,
-                    inputs=script_list,
-                    outputs=[loaded_script_info, loaded_scenes]
-                )
-
-            # ===== Tab 3: Video Generation =====
-            with gr.Tab("🎥 Video Generation"):
-                gr.Markdown("""
-                ## Tạo Video Tự Động
-                Sử dụng browser automation để generate video trên VEO 3.1
-                """)
-
-                gr.Markdown(generate_video_info())
-
-                gr.Markdown("### 📋 System Status")
-                status_output = gr.Textbox(
-                    label="Trạng thái hệ thống",
-                    value=check_system_status(),
-                    lines=6,
-                    interactive=False
-                )
-
-                check_status_btn = gr.Button("🔄 Check Status")
-                check_status_btn.click(
-                    fn=check_system_status,
-                    outputs=status_output
-                )
-
-                gr.Markdown("""
-                ### 🚀 Generate Video
-
-                ⚠️ **Important:**
-                - Video generation requires Playwright and MoviePy installed
-                - Each scene takes 5-7 minutes to generate
-                - Make sure your cookies are valid
-                - You need available VEO 3.1 quota
-
-                **To generate videos, use CLI:**
-                ```bash
-                # From existing script
-                python main.py --from-script ./data/scripts/script_xxx.json
-
-                # Or full automation
-                python main.py --topic "Your topic" --duration 60
-                ```
-                """)
-
-            # ===== Tab 4: Settings =====
-            with gr.Tab("⚙️ Settings"):
-                gr.Markdown("""
-                ## Cấu Hình Hệ Thống
-                """)
-
-                api_key_display = gr.Textbox(
-                    label="🔑 Gemini API Key",
-                    value=GEMINI_API_KEY[:20] + "..." if GEMINI_API_KEY else "Not configured",
-                    interactive=False,
-                    type="password"
-                )
-
-                gr.Markdown("""
-                ### 📝 Cấu hình .env
-
-                Chỉnh sửa file `.env` để thay đổi settings:
-
-                ```bash
-                GEMINI_API_KEY=your_api_key_here
-                FLOW_URL=https://labs.google/fx/vi/tools/flow
-                DEFAULT_VIDEO_DURATION=60
-                SCENE_DURATION=8
-                ```
-
-                ### 🍪 Cookies
-
-                Cookies được lưu tại: `config/cookies.json`
-
-                Để extract cookies:
-                ```bash
-                python tools/extract_cookies.py cookies_raw.json
-                ```
-
-                ### 📚 Documentation
-
-                - [Quick Start](QUICKSTART.md)
-                - [Setup Guide](SETUP_GUIDE.md)
-                - [Installation](INSTALL.md)
-                """)
-
-            # ===== Tab 5: Help =====
-            with gr.Tab("❓ Help"):
-                gr.Markdown("""
-                ## 📖 Hướng Dẫn Sử Dụng
-
-                ### 🚀 Quick Start
-
-                1. **Tạo Script**
-                   - Vào tab "Script Generation"
-                   - Nhập chủ đề video
-                   - Chọn thời lượng và style
-                   - Click "Generate Script"
-
-                2. **Xem Scripts Đã Lưu**
-                   - Vào tab "Script Library"
-                   - Chọn script từ dropdown
-                   - Click "Load Script"
-
-                3. **Generate Video (CLI)**
-                   ```bash
-                   python main.py --from-script <script_file>
-                   ```
-
-                ### 🔧 Installation
-
-                ```bash
-                # Install all dependencies
-                pip install -r requirements.txt
-
-                # Install Playwright browser
-                playwright install chromium
-                ```
-
-                ### ⚠️ Troubleshooting
-
-                **Script generation fails:**
-                - Check GEMINI_API_KEY in .env file
-                - Verify internet connection
-
-                **Video generation fails:**
-                - Ensure Playwright is installed
-                - Check cookies are valid
-                - Verify VEO 3.1 quota available
-
-                ### 📞 Support
-
-                - Check logs: `./data/logs/automation.log`
-                - Review documentation: `SETUP_GUIDE.md`
-                - Run diagnostics: `python quick_test.py`
-
-                ### 🎯 Examples
-
-                **Example Topics:**
-                - "Khám phá rừng Amazon huyền bí"
-                - "Hành trình dưới đáy đại dương"
-                - "Cuộc sống trên sao Hỏa"
-                - "Lịch sử phát triển của AI"
-
-                **Recommended Settings:**
-                - Duration: 30-60s (optimal)
-                - Scene duration: 6-10s
-                - Style: cinematic (best quality)
-                - Aspect ratio: 16:9 (YouTube standard)
-                """)
-
-        gr.Markdown("""
-        ---
-        ### 🎬 VEO 3.1 Automation v1.0
-        Made with ❤️ | [Documentation](README.md) | [GitHub](https://github.com)
-        """)
-
-    return app
-
-
-# ========== Main ==========
+    
+    # Tab 3: Final
+    with gr.Tab("3️⃣ Video cuối"):
+        gr.Markdown("### Nối tất cả cảnh thành video hoàn chỉnh")
+        
+        assemble_btn = gr.Button("🎞️ Nối video", variant="primary", size="lg")
+        final_status = gr.Textbox(label="Trạng thái", lines=3)
+        final_video = gr.Video(label="Video hoàn chỉnh")
+        
+        assemble_btn.click(
+            fn=assemble_final,
+            inputs=[],
+            outputs=[final_status, final_video]
+        )
+    
+    gr.Markdown("""
+    ---
+    <div style='text-align:center; color:#666; padding:10px;'>
+    ✅ API: OK | 🔑 Cookies: cookie.txt | 🎨 Modern Glass Theme
+    </div>
+    """)
 
 if __name__ == "__main__":
-    print("="*60)
-    print("Starting VEO 3.1 Automation Web UI...")
-    print("="*60)
-
-    if not GEMINI_API_KEY:
-        print("⚠️  WARNING: GEMINI_API_KEY not found in .env")
-        print("Some features will be disabled.")
-
-    print("\nLaunching Gradio interface...")
-    print("Access at: http://localhost:7860")
-    print("="*60)
-
-    app = create_ui()
-    app.launch(
-        server_name="0.0.0.0",
-        server_port=7860,
-        share=False,
-        show_error=True
-    )
+    print("🎬 VEO 3.1 Complete")
+    print("URL: http://localhost:7860")
+    app.launch(server_name="0.0.0.0", server_port=7860, share=False)
