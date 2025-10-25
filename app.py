@@ -177,10 +177,11 @@ async def generate_script_async(topic, duration, api_key, cookies, project_id):
     except Exception as e:
         return f"❌ Lỗi: {str(e)}", ""
 
-def produce_all_videos(progress=gr.Progress()):
-    """Produce all videos"""
+def produce_all_videos():
+    """Produce all videos with real-time updates"""
     if not state.scenes:
-        return "❌ Chưa có kịch bản!", ""
+        yield "❌ Chưa có kịch bản!", ""
+        return
 
     log = []
     def add_log(msg):
@@ -188,6 +189,7 @@ def produce_all_videos(progress=gr.Progress()):
 
     add_log("🚀 Bắt đầu sản xuất")
     add_log(f"🎬 Tổng: {len(state.scenes)} cảnh")
+    yield "\n".join(log), build_scenes_html()
 
     session = datetime.now().strftime("%Y%m%d_%H%M%S")
     logger = DetailedLogger(session_name=session)
@@ -195,75 +197,75 @@ def produce_all_videos(progress=gr.Progress()):
     controller = FlowControllerSelenium(cookies_path=state.cookies_path, headless=False)
 
     try:
-        progress(0.05, desc="🚀 Khởi động...")
+        add_log("🚀 Khởi động browser...")
+        yield "\n".join(log), build_scenes_html()
         controller.start()
 
         # Use default project ID
         project_id = DEFAULT_PROJECT_ID
 
-        progress(0.1, desc="📁 Vào project...")
-        add_log(f"📁 Sử dụng project: {project_id}")
+        add_log(f"📁 Vào project: {project_id}")
+        yield "\n".join(log), build_scenes_html()
 
         success = controller.goto_project(project_id)
 
         if success:
-            add_log(f"✅ Đã vào project {project_id}")
+            add_log(f"✅ Đã vào project")
             state.project_id = project_id
         else:
             add_log("❌ Không vào được project")
-            return state
+            yield "\n".join(log), build_scenes_html()
+            return
 
         add_log("✅ Sẵn sàng tạo video")
+        yield "\n".join(log), build_scenes_html()
 
         total = len(state.scenes)
         for i, scene in enumerate(state.scenes):
             num = scene['number']
             start = datetime.now()
 
-            add_log(f"🎬 CẢNH {num}/{total}: {scene['description']}")
+            add_log(f"🎬 CẢNH {num}/{total}: {scene['description'][:50]}...")
             scene['status'] = 'processing'
-
-            def cb(elapsed, percent, screenshot):
-                progress((0.2 + (i/total)*0.7), desc=f"🎬 {num}/{total} - {percent}%")
-                if percent % 20 == 0:
-                    add_log(f"   📊 {percent}%")
+            yield "\n".join(log), build_scenes_html()
 
             try:
                 url = controller.create_video_from_prompt(
                     prompt=scene['prompt'],
                     aspect_ratio="16:9",
                     is_first_video=(i==0),
-                    progress_callback=cb
+                    progress_callback=None
                 )
 
                 if url:
                     dur = (datetime.now() - start).total_seconds()
                     scene['status'] = 'completed'
                     scene['video_path'] = url
-                    add_log(f"   ✅ Hoàn thành ({dur:.1f}s)")
+                    add_log(f"   ✅ Cảnh {num} hoàn thành ({dur:.1f}s)")
                     logger.scene_complete(num, url, dur)
+                    yield "\n".join(log), build_scenes_html()
                 else:
                     scene['status'] = 'failed'
-                    add_log(f"   ❌ Thất bại")
+                    add_log(f"   ❌ Cảnh {num} thất bại")
+                    yield "\n".join(log), build_scenes_html()
 
             except Exception as e:
                 scene['status'] = 'failed'
-                add_log(f"   ❌ Lỗi: {str(e)}")
+                add_log(f"   ❌ Lỗi cảnh {num}: {str(e)}")
+                yield "\n".join(log), build_scenes_html()
 
         controller.close()
         logger.close()
 
         completed = sum(1 for s in state.scenes if s['status'] == 'completed')
-        add_log(f"🎉 KẾT QUẢ: {completed}/{total} hoàn thành")
-
-        progress(1.0, desc="✅ Xong!")
-        return "\n".join(log), build_scenes_html()
+        add_log(f"🎉 KẾT QUẢ: {completed}/{total} cảnh hoàn thành")
+        yield "\n".join(log), build_scenes_html()
 
     except Exception as e:
         controller.close()
         logger.close()
         add_log(f"❌ Lỗi: {str(e)}")
-        return "\n".join(log), build_scenes_html()
+        yield "\n".join(log), build_scenes_html()
 
 def regenerate_scene(scene_num, progress=gr.Progress()):
     """Regenerate scene"""

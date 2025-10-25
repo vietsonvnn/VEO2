@@ -5,46 +5,30 @@ __pycache__/
 *.so
 .Python
 venv/
+venv312/
 env/
 ENV/
-.venv
 
-# Environment variables
-.env
-.env.local
-
-# Sensitive data
-config/cookies.json
-cookies_raw.json
-Flow_cookie.txt
-
-# Data directories
-data/videos/*.mp4
-data/videos/*.avi
-data/scripts/*.json
-data/logs/*.log
+# Logs & screenshots
+*.log
+data/logs/*.png
+data/logs/*.html
 data/logs/*.json
 
-# Gradio
-flagged/
-gradio_cached_examples/
+# Cookies & Secrets
+cookie.txt
+api_key.txt
+.env
+
+# OS
+.DS_Store
+Thumbs.db
 
 # IDE
 .vscode/
 .idea/
 *.swp
 *.swo
-*~
 
-# OS
-.DS_Store
-Thumbs.db
-
-# Playwright
-.playwright/
-playwright/.cache/
-
-# Keep directory structure
-!data/videos/.gitkeep
-!data/scripts/.gitkeep
-!data/logs/.gitkeep
+# Videos
+data/videos/*.mp4

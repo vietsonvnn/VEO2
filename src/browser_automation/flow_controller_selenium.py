@@ -259,6 +259,13 @@ class FlowControllerSelenium:
                     logger.error("   ❌ Generate button disappeared")
                     return None
 
+            # Step 3.5: Get current video URLs before generating (to track new one)
+            import re
+            page_before = self.driver.page_source
+            gcs_pattern = r'https://storage\.googleapis\.com/ai-sandbox-videofx/video/[a-f0-9\-]+'
+            urls_before = set(re.findall(gcs_pattern, page_before))
+            logger.info(f"   📊 Current videos on page: {len(urls_before)}")
+
             logger.info("   🎬 Clicking Generate button...")
             # Use JavaScript click for more reliability
             self.driver.execute_script("arguments[0].click();", generate_button)
@@ -267,13 +274,13 @@ class FlowControllerSelenium:
 
             # Step 4: Wait for video generation to complete
             logger.info("   ⏳ Waiting for video generation...")
-            success = self._wait_for_video_generation(progress_callback=progress_callback)
+            success = self._wait_for_video_generation(progress_callback=progress_callback, urls_before=urls_before)
 
             if success:
                 logger.info("   ✅ Video generation completed!")
 
-                # Extract video URL from page
-                video_url = self._extract_video_url()
+                # Extract video URL from page (pass urls_before to find new URL)
+                video_url = self._extract_video_url(urls_before=urls_before)
 
                 if video_url:
                     logger.info(f"   🎬 Video URL extracted: {video_url[:80]}...")
@@ -410,7 +417,7 @@ class FlowControllerSelenium:
 
         return None
 
-    def _wait_for_video_generation(self, timeout: int = 120, progress_callback=None) -> bool:
+    def _wait_for_video_generation(self, timeout: int = 120, progress_callback=None, urls_before=None) -> bool:
         """
         Wait for video generation to complete with real-time progress tracking
 
@@ -607,52 +614,91 @@ class FlowControllerSelenium:
 
         return False
 
-    def _extract_video_url(self) -> Optional[str]:
+    def _extract_video_url(self, urls_before=None) -> Optional[str]:
         """
         Extract video URL from Flow page after video generation completes
-        Methods:
-        1. Get <video> src attribute
-        2. Convert blob URL to downloadable URL if needed
-        3. Extract Google Storage URL from network
+        Strategy: Find the NEWEST Google Storage URL by comparing before/after
         """
         try:
-            # Method 1: Find <video> element and get src
+            # Method 1: Extract Google Storage URL from page source (most reliable)
+            logger.info("      Searching for Google Storage URL in page source...")
+
+            import re
+            page_source = self.driver.page_source
+
+            # Pattern for Google Storage video URLs
+            gcs_pattern = r'https://storage\.googleapis\.com/ai-sandbox-videofx/video/[a-f0-9\-]+'
+            urls_after = set(re.findall(gcs_pattern, page_source))
+
+            logger.info(f"      Found {len(urls_after)} Google Storage URLs on page")
+
+            if urls_before is not None:
+                # Find NEW URLs (appeared after video generation)
+                new_urls = urls_after - urls_before
+                if new_urls:
+                    # Flow is set to create 1 video per prompt
+                    # Get the first (and should be only) new URL
+                    new_urls_sorted = sorted(list(new_urls))
+                    latest_url = new_urls_sorted[0]
+                    logger.info(f"      ✅ Found {len(new_urls)} NEW video URL(s)")
+                    logger.info(f"      {latest_url[:80]}...")
+                    return latest_url
+                else:
+                    logger.warning("      ⚠️  No new URLs found, using last URL")
+                    if urls_after:
+                        latest_url = sorted(list(urls_after))[-1]
+                        logger.info(f"      Using last URL: {latest_url[:80]}...")
+                        return latest_url
+            else:
+                # No before URLs provided, use last URL
+                if urls_after:
+                    latest_url = sorted(list(urls_after))[-1]
+                    logger.info(f"      ✅ Found Google Storage URL: {latest_url[:80]}...")
+                    return latest_url
+
+            # Method 2: Fallback to blob URL download
+            logger.warning("      No Google Storage URL found, trying blob URL...")
             video_elements = self.driver.find_elements(By.TAG_NAME, 'video')
 
-            for video in video_elements:
+            if not video_elements:
+                logger.warning("      No video elements found")
+                return None
+
+            # Get the last visible video
+            latest_video = None
+            for video in reversed(video_elements):
                 if video.is_displayed():
-                    src = video.get_attribute('src')
-                    if src:
-                        logger.info(f"      Found video src: {src[:80]}...")
+                    latest_video = video
+                    break
 
-                        # If blob URL, try to convert to actual URL
-                        if src.startswith('blob:'):
-                            logger.info("      Blob URL detected, attempting to extract actual URL...")
-                            actual_url = self._convert_blob_to_url(src)
-                            if actual_url:
-                                return actual_url
-                            # If can't convert, download blob and save locally
-                            else:
-                                local_path = self._download_blob_video(src)
-                                if local_path:
-                                    return local_path
-                        else:
-                            # Direct URL (Google Storage or similar)
-                            return src
+            if not latest_video:
+                logger.warning("      No visible video found")
+                return None
 
-            # Method 2: Check for source elements
-            source_elements = self.driver.find_elements(By.CSS_SELECTOR, 'video source')
-            for source in source_elements:
-                src = source.get_attribute('src')
-                if src:
-                    logger.info(f"      Found source src: {src[:80]}...")
-                    return src
+            src = latest_video.get_attribute('src')
+            if not src:
+                logger.warning("      Video has no src attribute")
+                return None
 
-            logger.warning("      No video URL found on page")
-            return None
+            logger.info(f"      Found blob src: {src[:80]}...")
+
+            # Download blob video
+            if src.startswith('blob:'):
+                logger.info("      Downloading blob video to local file...")
+                local_path = self._download_blob_video(src)
+                if local_path:
+                    logger.info(f"      ✅ Video saved locally: {local_path}")
+                    return local_path
+                else:
+                    logger.error("      ❌ Failed to download blob video")
+                    return None
+            else:
+                return src
 
         except Exception as e:
             logger.error(f"      Error extracting video URL: {e}")
+            import traceback
+            traceback.print_exc()
             return None
 
     def _convert_blob_to_url(self, blob_url: str) -> Optional[str]:
