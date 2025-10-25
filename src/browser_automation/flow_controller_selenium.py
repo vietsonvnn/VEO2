@@ -423,7 +423,7 @@ class FlowControllerSelenium:
 
         Args:
             timeout: Maximum wait time in seconds
-            progress_callback: Optional callback function(elapsed, percent, screenshot_path)
+            progress_callback: Optional callback function(elapsed, percent)
 
         Returns:
             True if video generated successfully, False otherwise
@@ -432,8 +432,6 @@ class FlowControllerSelenium:
 
         start_time = time.time()
         check_interval = 3  # Check every 3 seconds for more frequent updates
-        last_screenshot_time = 0
-        screenshot_interval = 10  # Take screenshot every 10 seconds
 
         while time.time() - start_time < timeout:
             elapsed = int(time.time() - start_time)
@@ -441,23 +439,10 @@ class FlowControllerSelenium:
 
             logger.info(f"      ⏳ Progress: {percent}% ({elapsed}s / {timeout}s)")
 
-            # Take periodic screenshots
-            screenshot_path = None
-            if time.time() - last_screenshot_time >= screenshot_interval:
-                try:
-                    from datetime import datetime
-                    screenshot_path = f"./data/logs/progress_{datetime.now().strftime('%H%M%S')}.png"
-                    os.makedirs("./data/logs", exist_ok=True)
-                    self.driver.save_screenshot(screenshot_path)
-                    logger.info(f"      📸 Screenshot saved: {screenshot_path}")
-                    last_screenshot_time = time.time()
-                except Exception as e:
-                    logger.debug(f"      Screenshot failed: {e}")
-
             # Call progress callback if provided
             if progress_callback:
                 try:
-                    progress_callback(elapsed, percent, screenshot_path)
+                    progress_callback(elapsed, percent)
                 except Exception as e:
                     logger.debug(f"      Progress callback failed: {e}")
 
@@ -470,14 +455,6 @@ class FlowControllerSelenium:
             play_button = self._find_play_button()
             if play_button:
                 logger.info("      ✅ Play button found - video ready!")
-                # Take final screenshot
-                try:
-                    from datetime import datetime
-                    final_screenshot = f"./data/logs/completed_{datetime.now().strftime('%H%M%S')}.png"
-                    self.driver.save_screenshot(final_screenshot)
-                    logger.info(f"      📸 Final screenshot: {final_screenshot}")
-                except:
-                    pass
                 return True
 
             # Look for error indicators
@@ -791,15 +768,6 @@ class FlowControllerSelenium:
             logger.info("👋 Closing Comet browser...")
             self.driver.quit()
             logger.info("✅ Browser closed")
-
-    def save_screenshot(self, filename: str = None):
-        """Save screenshot for debugging"""
-        if not filename:
-            from datetime import datetime
-            filename = f"./comet_screenshot_{datetime.now().strftime('%H%M%S')}.png"
-
-        self.driver.save_screenshot(filename)
-        logger.info(f"📸 Screenshot saved: {filename}")
 
     def save_page_html(self, filename: str = None):
         """Save page HTML for debugging"""
