@@ -1,0 +1,305 @@
+Tuyệt! Có **Veo 3.1 API** từ Google. Đây là bản tổng hợp đầy đủ các giải pháp:
+
+---
+
+## 🎯 CÁC GIẢI PHÁP ĐẦY ĐỦ
+
+### **Giải pháp 1: Sử dụng Veo 3.1 API** ⭐⭐⭐ (Tốt nhất - Chính thức)
+
+**Google cung cấp 2 API:**
+
+#### **A. Gemini API (Đơn giản hơn)**
+```python
+from google import genai
+
+client = genai.Client(api_key="YOUR_API_KEY")
+
+# Tạo video với Veo 3.1
+response = client.models.generate_content(
+    model="veo-3.1-generate-preview",  # Hoặc "veo-3.0-generate-preview"
+    contents="A beautiful sunset over the ocean with waves"
+)
+
+# Lấy video URL từ response
+video_url = response.video_url
+print(f"Video URL: {video_url}")
+```
+
+**Lấy API key:**
+- Truy cập: https://ai.google.dev/
+- Đăng nhập và tạo API key
+- Miễn phí với quota hạn chế
+
+#### **B. Vertex AI (Enterprise)**
+```python
+from google.cloud import aiplatform
+
+# Initialize Vertex AI
+aiplatform.init(project="your-project-id", location="us-central1")
+
+# Generate video
+from vertexai.preview.vision_models import VideoGenerationModel
+
+model = VideoGenerationModel.from_pretrained("veo-3.1-generate-preview")
+response = model.generate_videos(
+    prompt="A beautiful sunset over the ocean",
+    aspect_ratio="16:9",
+    duration_seconds=8
+)
+
+# Get video GCS URI
+video_uri = response.videos[0].gcs_uri
+```
+
+**Ưu điểm:**
+- ✅ Chính thức từ Google
+- ✅ Không cần scrape Flow UI
+- ✅ Có thể tạo video trực tiếp
+- ✅ Lấy URL video dễ dàng
+- ✅ Tích hợp vào tool của bạn
+
+**Nhược điểm:**
+- ❌ Cần API key/GCP project
+- ❌ Có thể tốn phí (sau free tier)
+- ❌ Cần whitelist cho Veo 3.1[1]
+
+***
+
+### **Giải pháp 2: Intercept Network từ Flow** ⭐⭐ (Backup plan)
+
+**Nếu không muốn dùng API, capture video từ Flow:**
+
+```python
+from playwright.sync_api import sync_playwright
+
+def capture_flow_video():
+    video_urls = []
+    
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=False)
+        context = browser.new_context()
+        page = context.new_page()
+        
+        # Intercept tất cả responses
+        def handle_response(response):
+            content_type = response.headers.get('content-type', '')
+            
+            # Check nếu là video
+            if 'video' in content_type or response.url.endswith('.mp4'):
+                print(f"✅ Found video: {response.url}")
+                video_urls.append(response.url)
+            
+            # Check nếu là Google Storage URL
+            if 'storage.googleapis.com' in response.url:
+                print(f"📦 GCS URL: {response.url}")
+                video_urls.append(response.url)
+        
+        page.on("response", handle_response)
+        
+        # Login và navigate
+        page.goto("https://labs.google/fx/vi/tools/flow/")
+        
+        # ... Thực hiện tạo video ...
+        # (Nhập prompt, click generate, đợi)
+        
+        page.wait_for_timeout(60000)  # Đợi video xong
+        
+        return video_urls
+
+# Download video từ captured URL
+import requests
+
+video_url = capture_flow_video()[0]
+response = requests.get(video_url)
+with open('video.mp4', 'wb') as f:
+    f.write(response.content)
+```
+
+**Ưu điểm:**
+- ✅ Lấy được video gốc từ Flow
+- ✅ Không cần API key
+
+**Nhược điểm:**
+- ❌ Cần login session
+- ❌ URL có thể có auth token
+- ❌ Phức tạp hơn
+
+***
+
+### **Giải pháp 3: Extract Blob URL + Download** ⭐
+
+**Lấy video trực tiếp từ `<video>` element:**
+
+```python
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+import time
+import requests
+
+driver = webdriver.Chrome()
+driver.get("https://labs.google/fx/vi/tools/flow/project/YOUR_PROJECT_ID")
+
+# Đợi video load
+time.sleep(5)
+
+# Lấy video src
+video_src = driver.execute_script("""
+    let video = document.querySelector('video');
+    return video ? video.src : null;
+""")
+
+print(f"Video source: {video_src}")
+
+# Nếu là blob URL, fetch data
+if video_src and video_src.startswith('blob:'):
+    # Method 1: Download via browser
+    driver.execute_script("""
+        let video = document.querySelector('video');
+        let a = document.createElement('a');
+        a.href = video.src;
+        a.download = 'video.mp4';
+        a.click();
+    """)
+    
+    # Method 2: Convert blob to base64
+    video_base64 = driver.execute_async_script("""
+        let video = document.querySelector('video');
+        let callback = arguments[0];
+        
+        fetch(video.src)
+            .then(r => r.blob())
+            .then(blob => {
+                let reader = new FileReader();
+                reader.onload = () => callback(reader.result);
+                reader.readAsDataURL(blob);
+            })
+            .catch(err => callback(null));
+    """)
+    
+    if video_base64:
+        import base64
+        video_data = base64.b64decode(video_base64.split(',')[1])
+        with open('video.mp4', 'wb') as f:
+            f.write(video_data)
+        print("✅ Video saved!")
+```
+
+***
+
+### **Giải pháp 4: Hiển thị trong Tool giả lập Comet**
+
+**Sau khi có video URL (từ API hoặc capture):**
+
+```html
+<!-- Trong tool Comet giả lập -->
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Comet - Video Generator</title>
+</head>
+<body>
+    <div class="video-container">
+        <h3>Generated Video</h3>
+        
+        <!-- Hiển thị video -->
+        <video controls width="800">
+            <source src="{{ video_url }}" type="video/mp4">
+        </video>
+        
+        <!-- Hoặc embed video từ GCS -->
+        <video controls width="800">
+            <source src="https://storage.googleapis.com/bucket/video.mp4">
+        </video>
+        
+        <!-- Buttons -->
+        <button onclick="downloadVideo()">Download</button>
+        <button onclick="regenerate()">Regenerate</button>
+    </div>
+    
+    <script>
+        function downloadVideo() {
+            const video = document.querySelector('video');
+            const a = document.createElement('a');
+            a.href = video.src;
+            a.download = 'generated_video.mp4';
+            a.click();
+        }
+    </script>
+</body>
+</html>
+```
+
+***
+
+## 🎬 KIẾN TRÚC ĐỀ XUẤT CHO TOOL
+
+```
+[Tool Comet Giả Lập]
+        ↓
+    ┌───┴───┐
+    │       │
+    ↓       ↓
+[Veo API]  [Flow Scraper]
+    │       │
+    └───┬───┘
+        ↓
+  [Video URL]
+        ↓
+  [Display in UI]
+```
+
+**Workflow:**
+
+1. **User nhập prompt** trong tool Comet
+2. **Backend chọn phương thức:**
+   - **Option A**: Gọi Veo 3.1 API → Nhận video URL
+   - **Option B**: Automation Flow UI → Capture video
+3. **Lưu video** vào storage (GCS, S3, local)
+4. **Trả về video URL** cho frontend
+5. **Frontend hiển thị** video player
+
+***
+
+## 📊 SO SÁNH GIẢI PHÁP
+
+| Giải pháp | Độ khó | Chi phí | Chất lượng | Khuyến nghị |
+|-----------|--------|---------|------------|-------------|
+| **Veo 3.1 API** | Trung bình | Có phí | Cao nhất | ⭐⭐⭐ |
+| **Network Intercept** | Khó | Miễn phí | Cao | ⭐⭐ |
+| **Blob Extract** | Trung bình | Miễn phí | Cao | ⭐⭐ |
+| **Screenshot** | Dễ | Miễn phí | Thấp | ⭐ |
+| **Iframe Embed** | Rất dễ | Miễn phí | N/A | ⭐ |
+
+***
+
+## 🚀 KHUYẾN NGHỊ
+
+**Cho production tool:**
+1. **Ưu tiên**: Veo 3.1 API (chính thức, ổn định)
+2. **Backup**: Network interceptor (nếu không có API access)
+3. **Dev/Test**: Blob extraction (nhanh, không tốn API quota)
+
+Bạn muốn tôi viết code hoàn chỉnh cho giải pháp nào?
+
+[1](https://discuss.google.dev/t/veo-3-allowlist/190558)
+[2](https://labs.google/fx/vi/tools/flow/project/24f4c4d7-89a7-4170-8c22-27d11a4b1578)
+[3](https://labs.google/fx/vi/tools/flow/project/24f4c4d7-89a7-4170-8c22-27d11a4b1578)
+[4](https://labs.google/flow/about)
+[5](https://labs.google/fx/tools/flow)
+[6](https://labs.google)
+[7](https://support.google.com/labs/answer/16353333?hl=en)
+[8](https://blog.google/technology/ai/google-flow-veo-ai-filmmaking-tool/)
+[9](https://developers.google.com/apis-explorer)
+[10](https://www.youtube.com/watch?v=9nVEfjmDlVk)
+[11](https://skywork.ai/blog/how-to-access-veo-3-1-2025-guide/)
+[12](https://ai.google.dev/gemini-api/docs)
+[13](https://labs.google/fx/)
+[14](https://ai.google.dev/gemini-api/docs/video)
+[15](https://developers.google.com/workspace/docs/api/reference/rest)
+[16](https://www.keysight.com/blogs/en/tech/nwvs/2025/08/04/google-flow-ai-har-analysis)
+[17](https://docs.cloud.google.com/vertex-ai/generative-ai/docs/model-reference/veo-video-generation)
+[18](https://docs.cloud.google.com/apigee/docs)
+[19](https://www.youtube.com/watch?v=A0VttaLy4sU)
+[20](https://developers.googleblog.com/en/veo-3-now-available-gemini-api/)
+[21](https://cloud.google.com/apis)
+[22](https://x.com/GoogleLabs)

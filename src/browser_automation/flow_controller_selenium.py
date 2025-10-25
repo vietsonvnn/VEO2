@@ -217,11 +217,25 @@ class FlowControllerSelenium:
                 logger.error("   ❌ Textarea not found")
                 return None
 
-            # Step 2: Fill prompt
+            # Step 2: Fill prompt (with better interaction)
             logger.info("   📝 Filling prompt...")
-            textarea.clear()
+
+            # Scroll to textarea
+            self.driver.execute_script("arguments[0].scrollIntoView(true);", textarea)
+            time.sleep(0.5)
+
+            # Click to focus
+            textarea.click()
+            time.sleep(0.5)
+
+            # Clear using JavaScript (more reliable)
+            self.driver.execute_script("arguments[0].value = '';", textarea)
+
+            # Fill using send_keys (triggers proper events)
             textarea.send_keys(prompt)
-            time.sleep(2)
+
+            # Wait for Flow to process the input
+            time.sleep(3)
             logger.info("   ✅ Prompt filled")
 
             # Step 3: Find and click Generate button
@@ -231,13 +245,23 @@ class FlowControllerSelenium:
                 logger.error("   ❌ Generate button not found")
                 return None
 
-            if not generate_button.is_enabled():
-                logger.warning("   ⚠️  Generate button not enabled yet, waiting...")
-                time.sleep(2)
+            # Wait until button is fully enabled
+            max_wait = 10
+            for i in range(max_wait):
+                if generate_button.is_enabled():
+                    break
+                logger.info(f"   ⏳ Waiting for button to enable... ({i+1}/{max_wait}s)")
+                time.sleep(1)
+                # Re-find button in case DOM changed
+                generate_button = self._find_generate_button()
+                if not generate_button:
+                    logger.error("   ❌ Generate button disappeared")
+                    return None
 
             logger.info("   🎬 Clicking Generate button...")
-            generate_button.click()
-            time.sleep(2)
+            # Use JavaScript click for more reliability
+            self.driver.execute_script("arguments[0].click();", generate_button)
+            time.sleep(3)
             logger.info("   ✅ Generate button clicked")
 
             # Step 4: Wait for video generation to complete

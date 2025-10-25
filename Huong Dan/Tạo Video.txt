@@ -1,0 +1,949 @@
+Hoàn hảo! Tôi đã phân tích chi tiết toàn bộ workflow. Đây là **quy trình đầy đủ từ nhập lệnh đến xem video**:
+
+---
+
+## **PHẦN 1: QUY TRÌNH NHẬP LỆNH VÀ TẠO VIDEO**
+
+### **Bước 1: Nhập Prompt**
+
+```html
+<!-- UI Input Section -->
+<div class="prompt-input-container">
+  <!-- Mode Selector -->
+  <div class="mode-selector">
+    <button class="dropdown">
+      Từ văn bản sang video
+      <span class="icon">arrow_drop_down</span>
+    </button>
+    <!-- Dropdown options khi click -->
+    <div class="dropdown-menu">
+      <div class="option">
+        <span class="icon">text_analysis</span>
+        Từ văn bản sang video
+      </div>
+      <div class="option">
+        <span class="icon">photo_spark</span>
+        Tạo video từ các khung hình
+      </div>
+      <div class="option">
+        <span class="icon">photo_merge_auto</span>
+        Tạo video từ các thành phần
+      </div>
+    </div>
+  </div>
+
+  <!-- Text Input Area -->
+  <textarea 
+    class="prompt-input"
+    placeholder="Tạo một video bằng văn bản…"
+    id="videoPrompt"
+  >A beautiful sunset over mountains</textarea>
+
+  <!-- Settings Preview -->
+  <div class="settings-preview">
+    <span class="aspect-ratio">crop_16_9</span>
+    <span class="output-count">x1</span>
+  </div>
+</div>
+```
+
+### **Bước 2: Cấu hình Settings (Sidebar)**
+
+```javascript
+// Settings Panel Structure
+const videoSettings = {
+  // Tỷ lệ khung hình
+  aspectRatio: {
+    options: [
+      { icon: 'crop_landscape', label: 'Khổ ngang (16:9)', value: '16:9' },
+      { icon: 'crop_portrait', label: 'Khổ dọc (9:16)', value: '9:16' }
+    ],
+    selected: '16:9'
+  },
+  
+  // Số lượng video output
+  outputCount: {
+    options: [1, 2, 3, 4],
+    selected: 1
+  },
+  
+  // Model selection
+  model: {
+    options: [
+      { 
+        value: 'veo-3.1-fast', 
+        label: 'Veo 3.1 - Fast', 
+        badge: 'Beta Audio',
+        checked: false 
+      },
+      { 
+        value: 'veo-3.1-quality', 
+        label: 'Veo 3.1 - Quality', 
+        badge: 'Beta Audio',
+        checked: true  // Default selected
+      },
+      { 
+        value: 'veo-2-fast', 
+        label: 'Veo 2 - Fast', 
+        badge: 'Support Ending Soon',
+        checked: false 
+      },
+      { 
+        value: 'veo-2-quality', 
+        label: 'Veo 2 - Quality', 
+        badge: 'Support Ending Soon',
+        checked: false 
+      }
+    ]
+  }
+};
+```
+
+### **Bước 3: Click Generate (Submit)**
+
+```javascript
+// Khi user click Generate button hoặc press Enter
+async function generateVideo() {
+  const prompt = document.getElementById('videoPrompt').value;
+  const settings = getSelectedSettings();
+
+  // Step 1: Validate input
+  if (!prompt.trim()) {
+    showError('Vui lòng nhập prompt');
+    return;
+  }
+
+  // Step 2: Show loading state
+  showLoadingState();
+
+  // Step 3: API Call
+  try {
+    const response = await fetch('/api/generate-video', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${getAuthToken()}`
+      },
+      body: JSON.stringify({
+        projectId: getCurrentProjectId(),
+        prompt: prompt,
+        model: settings.model,
+        aspectRatio: settings.aspectRatio,
+        numberOfVideos: settings.outputCount
+      })
+    });
+
+    const data = await response.json();
+    
+    // Step 4: Start polling for video generation status
+    pollVideoStatus(data.operationId);
+    
+  } catch (error) {
+    showError('Lỗi khi tạo video: ' + error.message);
+  }
+}
+
+// Polling mechanism (giống code Veo API)
+async function pollVideoStatus(operationId) {
+  const interval = setInterval(async () => {
+    const status = await fetch(`/api/operations/${operationId}`);
+    const data = await status.json();
+
+    // Update progress UI
+    updateProgressBar(data.progress); // 0-100%
+
+    if (data.done) {
+      clearInterval(interval);
+      
+      // Step 5: Video ready, display it
+      displayGeneratedVideo(data.videoUrl, data.metadata);
+    }
+  }, 5000); // Poll mỗi 5 giây
+}
+```
+
+### **Bước 4: Loading State**
+
+```html
+<!-- Loading UI khi đang generate -->
+<div class="generation-status">
+  <div class="loading-spinner">
+    <svg class="circular-progress">
+      <circle class="path" cx="24" cy="24" r="20"></circle>
+    </svg>
+  </div>
+  <p>Đang tải...</p>
+  <div class="progress-bar">
+    <div class="progress-fill" style="width: 45%"></div>
+  </div>
+  <p class="eta">Ước tính: 2 phút 30 giây</p>
+</div>
+
+<style>
+.generation-status {
+  text-align: center;
+  padding: 40px;
+  background: #f9f9f9;
+  border-radius: 12px;
+  margin: 20px 0;
+}
+
+.progress-bar {
+  width: 100%;
+  height: 4px;
+  background: #e0e0e0;
+  border-radius: 2px;
+  overflow: hidden;
+  margin: 16px 0;
+}
+
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #1a73e8, #34a853);
+  transition: width 0.5s ease;
+}
+</style>
+```
+
+***
+
+## **PHẦN 2: XEM VIDEO ĐÃ ĐƯỢC TẠO**
+
+### **Bước 5: Video Card Display**
+
+```html
+<!-- Video được hiển thị sau khi generate xong -->
+<div class="video-result-card">
+  <!-- Header với metadata -->
+  <div class="video-header">
+    <div class="video-date">25 thg 10, 2025</div>
+    <div class="video-controls-mini">
+      <button class="btn-icon" onclick="togglePlay()">
+        <span id="playIcon">play_arrow</span>
+        <span id="duration">0:08</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- Video Player -->
+  <div class="video-player-container">
+    <video 
+      id="generatedVideo"
+      src="https://storage.googleapis.com/labs-flow-videos/{video-id}.mp4"
+      poster="https://storage.googleapis.com/labs-flow-videos/{video-id}_thumb.jpg"
+      preload="metadata"
+      playsinline
+    ></video>
+
+    <!-- Custom controls overlay -->
+    <div class="video-controls-overlay" id="videoControls">
+      <button class="btn-play-large" onclick="togglePlay()">
+        <span class="icon">play_arrow</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- Video Info -->
+  <div class="video-info">
+    <h4>Nhập câu lệnh</h4>
+    <p class="prompt-text">A beautiful sunset over mountains</p>
+    <p class="model-badge">Veo 3.1 - Quality</p>
+  </div>
+
+  <!-- Action Buttons -->
+  <div class="video-actions">
+    <button class="btn-action" onclick="downloadVideo()">
+      <span class="icon">download</span>
+      Tải xuống
+    </button>
+    <button class="btn-action" onclick="editVideo()">
+      <span class="icon">edit</span>
+      Chỉnh sửa
+    </button>
+    <button class="btn-action" onclick="extendVideo()">
+      <span class="icon">add</span>
+      Chèn
+    </button>
+    <button class="btn-action" onclick="flagVideo()">
+      <span class="icon">flag</span>
+      Gắn cờ
+    </button>
+    <button class="btn-action btn-delete" onclick="deleteVideo()">
+      <span class="icon">delete_outline</span>
+      Xoá
+    </button>
+  </div>
+</div>
+```
+
+### **Bước 6: Video Player Controls**
+
+```javascript
+class VideoPlayer {
+  constructor(videoElement) {
+    this.video = videoElement;
+    this.isPlaying = false;
+    this.setupEventListeners();
+  }
+
+  setupEventListeners() {
+    this.video.addEventListener('loadedmetadata', () => {
+      this.updateDuration();
+    });
+
+    this.video.addEventListener('timeupdate', () => {
+      this.updateProgress();
+    });
+
+    this.video.addEventListener('ended', () => {
+      this.onVideoEnded();
+    });
+
+    // Click to play/pause
+    this.video.addEventListener('click', () => {
+      this.togglePlay();
+    });
+  }
+
+  togglePlay() {
+    if (this.isPlaying) {
+      this.pause();
+    } else {
+      this.play();
+    }
+  }
+
+  play() {
+    this.video.play();
+    this.isPlaying = true;
+    document.getElementById('playIcon').textContent = 'pause';
+    document.querySelector('.btn-play-large').style.display = 'none';
+  }
+
+  pause() {
+    this.video.pause();
+    this.isPlaying = false;
+    document.getElementById('playIcon').textContent = 'play_arrow';
+    document.querySelector('.btn-play-large').style.display = 'flex';
+  }
+
+  updateDuration() {
+    const duration = this.formatTime(this.video.duration);
+    document.getElementById('duration').textContent = duration;
+  }
+
+  updateProgress() {
+    const currentTime = this.formatTime(this.video.currentTime);
+    const duration = this.formatTime(this.video.duration);
+    document.getElementById('duration').textContent = 
+      `${currentTime} / ${duration}`;
+  }
+
+  formatTime(seconds) {
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  }
+
+  onVideoEnded() {
+    this.isPlaying = false;
+    document.getElementById('playIcon').textContent = 'replay';
+  }
+}
+
+// Initialize player
+const videoPlayer = new VideoPlayer(
+  document.getElementById('generatedVideo')
+);
+```
+
+### **Bước 7: Download Options**
+
+```javascript
+// Khi click download button
+function showDownloadOptions() {
+  // Hiện modal với các tùy chọn
+  const modal = `
+    <div class="download-modal">
+      <h3>Tải xuống video</h3>
+      <div class="download-options">
+        <button onclick="downloadVideo('gif', '270p')">
+          <span class="icon">gif_box</span>
+          Ảnh GIF động (270p)
+        </button>
+        <button onclick="downloadVideo('mp4', '720p')">
+          <span class="icon">capture</span>
+          Kích thước gốc (720p)
+        </button>
+        <button onclick="downloadVideo('mp4', '1080p')">
+          <span class="icon">aspect_ratio</span>
+          Đã tăng độ phân giải (1080p)
+        </button>
+      </div>
+    </div>
+  `;
+  
+  document.body.insertAdjacentHTML('beforeend', modal);
+}
+
+async function downloadVideo(format, resolution) {
+  const videoId = getCurrentVideoId();
+  
+  // Request download URL
+  const response = await fetch(`/api/videos/${videoId}/download`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ format, resolution })
+  });
+
+  const { downloadUrl } = await response.json();
+
+  // Trigger download
+  const a = document.createElement('a');
+  a.href = downloadUrl;
+  a.download = `video_${videoId}.${format}`;
+  a.click();
+}
+```
+
+### **Bước 8: Edit Video (Chỉnh sửa/Chèn)**
+
+```javascript
+// Khi click "Chèn" button
+function openExtendVideoModal() {
+  // Navigate to scene builder với video hiện tại
+  const videoId = getCurrentVideoId();
+  const sceneId = generateUUID();
+  
+  window.location.href = 
+    `/project/${projectId}/scenes/${sceneId}?sourceVideo=${videoId}`;
+}
+
+// Scene Builder UI
+const sceneBuilderHTML = `
+  <div class="scene-builder">
+    <!-- Timeline với video hiện tại -->
+    <div class="timeline">
+      <div class="clip" data-duration="8">
+        <video src="{current-video-url}"></video>
+        <span class="duration">0:00 / 0:08</span>
+      </div>
+      
+      <!-- Placeholder cho clip mới -->
+      <div class="clip-placeholder">
+        <button onclick="addClip()">
+          <span class="icon">add</span>
+          Thêm clip
+        </button>
+      </div>
+    </div>
+
+    <!-- Prompt input cho clip mới -->
+    <div class="extend-prompt">
+      <h3>Chèn</h3>
+      <textarea 
+        placeholder="Mô tả nội dung bạn muốn chèn"
+      ></textarea>
+      <button class="btn-generate">Generate</button>
+    </div>
+  </div>
+`;
+```
+
+***
+
+## **WORKFLOW HOÀN CHỈNH (SƠ ĐỒ)**
+
+```
+┌─────────────────────────────────────────────────────────┐
+│ 1. NHẬP PROMPT                                          │
+│    - Text input: "A beautiful sunset over mountains"   │
+│    - Chọn mode: Từ văn bản sang video                  │
+└─────────────────┬───────────────────────────────────────┘
+                  │
+                  ▼
+┌─────────────────────────────────────────────────────────┐
+│ 2. CẤU HÌNH SETTINGS                                    │
+│    - Tỷ lệ: 16:9 (Ngang) / 9:16 (Dọc)                 │
+│    - Số lượng: x1, x2, x3, x4                          │
+│    - Model: Veo 3.1 Quality (default)                  │
+└─────────────────┬───────────────────────────────────────┘
+                  │
+                  ▼
+┌─────────────────────────────────────────────────────────┐
+│ 3. CLICK GENERATE / PRESS ENTER                        │
+│    - Validate input                                     │
+│    - POST /api/generate-video                          │
+│    - Nhận operationId                                   │
+└─────────────────┬───────────────────────────────────────┘
+                  │
+                  ▼
+┌─────────────────────────────────────────────────────────┐
+│ 4. LOADING STATE (Polling)                             │
+│    - Spinner animation                                  │
+│    - Progress bar: 0% → 100%                           │
+│    - Poll status mỗi 5s                                │
+│    - ETA: ~2-6 phút                                    │
+└─────────────────┬───────────────────────────────────────┘
+                  │
+                  ▼
+┌─────────────────────────────────────────────────────────┐
+│ 5. VIDEO CARD XUẤT HIỆN                                │
+│    ┌───────────────────────────────────────────┐       │
+│    │ [Date: 25 thg 10, 2025] [play_arrow 0:08]│       │
+│    │ ┌─────────────────────────────────────┐   │       │
+│    │ │                                     │   │       │
+│    │ │      VIDEO PLAYER (paused)          │   │       │
+│    │ │      [▶ Play button overlay]        │   │       │
+│    │ │                                     │   │       │
+│    │ └─────────────────────────────────────┘   │       │
+│    │ Prompt: "A beautiful sunset..."          │       │
+│    │ Model: Veo 3.1 - Quality                 │       │
+│    │ [Download] [Edit] [Extend] [Flag] [Del]  │       │
+│    └───────────────────────────────────────────┘       │
+└─────────────────┬───────────────────────────────────────┘
+                  │
+          ┌───────┴────────┐
+          │                │
+          ▼                ▼
+    ┌──────────┐    ┌──────────┐
+    │  6. PLAY │    │ 7. ACTIONS│
+    │  VIDEO   │    │  - Download│
+    │  ──────  │    │  - Edit   │
+    │  Controls│    │  - Extend │
+    │  Play ▶  │    │  - Flag   │
+    │  Pause ⏸ │    │  - Delete │
+    │  Seek ━━ │    └──────────┘
+    │  Volume 🔊│
+    └──────────┘
+```
+
+***
+
+## **CODE MẪU TÍCH HỢP HOÀN CHỈNH**
+
+```html
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <title>Flow - Video Generator</title>
+  <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #f9f9f9;
+      padding: 20px;
+    }
+
+    .container {
+      max-width: 900px;
+      margin: 0 auto;
+    }
+
+    /* Prompt Input Section */
+    .prompt-section {
+      background: white;
+      border-radius: 12px;
+      padding: 24px;
+      margin-bottom: 20px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+
+    .mode-selector {
+      margin-bottom: 16px;
+    }
+
+    .mode-btn {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 16px;
+      background: #f1f3f4;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+
+    .prompt-input {
+      width: 100%;
+      min-height: 120px;
+      padding: 16px;
+      border: 1px solid #dadce0;
+      border-radius: 8px;
+      font-size: 16px;
+      resize: vertical;
+      font-family: inherit;
+    }
+
+    .settings-bar {
+      display: flex;
+      gap: 12px;
+      margin-top: 16px;
+      align-items: center;
+    }
+
+    .btn-generate {
+      background: #1a73e8;
+      color: white;
+      border: none;
+      padding: 12px 32px;
+      border-radius: 24px;
+      font-size: 16px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    .btn-generate:hover {
+      background: #1557b0;
+    }
+
+    /* Loading State */
+    .loading-state {
+      background: white;
+      border-radius: 12px;
+      padding: 40px;
+      text-align: center;
+      margin: 20px 0;
+    }
+
+    .spinner {
+      width: 40px;
+      height: 40px;
+      border: 4px solid #f3f3f3;
+      border-top: 4px solid #1a73e8;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin: 0 auto 20px;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .progress-bar {
+      width: 100%;
+      height: 4px;
+      background: #e0e0e0;
+      border-radius: 2px;
+      overflow: hidden;
+      margin: 20px 0;
+    }
+
+    .progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #1a73e8, #34a853);
+      width: 0%;
+      transition: width 0.5s ease;
+    }
+
+    /* Video Result Card */
+    .video-card {
+      background: white;
+      border-radius: 12px;
+      overflow: hidden;
+      margin: 20px 0;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+
+    .video-header {
+      display: flex;
+      justify-content: space-between;
+      padding: 16px 20px;
+      border-bottom: 1px solid #f1f3f4;
+    }
+
+    .video-player {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 16/9;
+      background: #000;
+    }
+
+    .video-player video {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+
+    .play-overlay {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 72px;
+      height: 72px;
+      background: rgba(255,255,255,0.95);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .play-overlay:hover {
+      transform: translate(-50%, -50%) scale(1.1);
+    }
+
+    .play-overlay .material-icons {
+      font-size: 48px;
+      color: #1a73e8;
+    }
+
+    .video-info {
+      padding: 20px;
+    }
+
+    .video-actions {
+      display: flex;
+      gap: 8px;
+      padding: 16px 20px;
+      border-top: 1px solid #f1f3f4;
+      flex-wrap: wrap;
+    }
+
+    .btn-action {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 16px;
+      border: 1px solid #dadce0;
+      background: white;
+      border-radius: 20px;
+      cursor: pointer;
+      font-size: 14px;
+      transition: all 0.2s;
+    }
+
+    .btn-action:hover {
+      background: #f8f9fa;
+      border-color: #1a73e8;
+      color: #1a73e8;
+    }
+
+    .btn-action .material-icons {
+      font-size: 18px;
+    }
+
+    .hidden { display: none; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <!-- SECTION 1: Prompt Input -->
+    <div class="prompt-section" id="promptSection">
+      <h2 style="margin-bottom: 16px;">Nhập vào ô nhập câu lệnh để bắt đầu</h2>
+      
+      <div class="mode-selector">
+        <button class="mode-btn">
+          <span class="material-icons">text_fields</span>
+          Từ văn bản sang video
+          <span class="material-icons">arrow_drop_down</span>
+        </button>
+      </div>
+
+      <textarea 
+        class="prompt-input" 
+        id="promptInput"
+        placeholder="Tạo một video bằng văn bản…"
+      ></textarea>
+
+      <div class="settings-bar">
+        <select style="padding: 8px 12px; border-radius: 6px; border: 1px solid #dadce0;">
+          <option>16:9 (Ngang)</option>
+          <option>9:16 (Dọc)</option>
+        </select>
+        
+        <select style="padding: 8px 12px; border-radius: 6px; border: 1px solid #dadce0;">
+          <option>x1 video</option>
+          <option>x2 videos</option>
+          <option>x3 videos</option>
+          <option>x4 videos</option>
+        </select>
+
+        <button class="btn-generate" onclick="generateVideo()">
+          Tạo video
+        </button>
+      </div>
+    </div>
+
+    <!-- SECTION 2: Loading State -->
+    <div class="loading-state hidden" id="loadingState">
+      <div class="spinner"></div>
+      <h3>Đang tạo video của bạn...</h3>
+      <div class="progress-bar">
+        <div class="progress-fill" id="progressFill"></div>
+      </div>
+      <p id="eta">Ước tính: 2 phút 30 giây</p>
+    </div>
+
+    <!-- SECTION 3: Video Result -->
+    <div class="video-card hidden" id="videoCard">
+      <div class="video-header">
+        <span id="videoDate">25 thg 10, 2025</span>
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span class="material-icons" id="playIcon">play_arrow</span>
+          <span id="videoDuration">0:08</span>
+        </div>
+      </div>
+
+      <div class="video-player">
+        <video id="videoElement" playsinline></video>
+        <div class="play-overlay" id="playOverlay" onclick="togglePlay()">
+          <span class="material-icons">play_arrow</span>
+        </div>
+      </div>
+
+      <div class="video-info">
+        <h4>Nhập câu lệnh</h4>
+        <p id="videoPromptDisplay"></p>
+        <p style="color: #5f6368; font-size: 14px; margin-top: 8px;">Veo 3.1 - Quality</p>
+      </div>
+
+      <div class="video-actions">
+        <button class="btn-action" onclick="downloadVideo()">
+          <span class="material-icons">download</span>
+          Tải xuống
+        </button>
+        <button class="btn-action">
+          <span class="material-icons">edit</span>
+          Chỉnh sửa
+        </button>
+        <button class="btn-action">
+          <span class="material-icons">add</span>
+          Chèn
+        </button>
+        <button class="btn-action">
+          <span class="material-icons">flag</span>
+          Gắn cờ
+        </button>
+        <button class="btn-action" onclick="deleteVideo()" style="color: #d93025;">
+          <span class="material-icons">delete_outline</span>
+          Xoá
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let videoPlayer = null;
+
+    // GENERATE VIDEO FUNCTION
+    async function generateVideo() {
+      const prompt = document.getElementById('promptInput').value;
+      
+      if (!prompt.trim()) {
+        alert('Vui lòng nhập prompt!');
+        return;
+      }
+
+      // Show loading, hide prompt
+      document.getElementById('promptSection').classList.add('hidden');
+      document.getElementById('loadingState').classList.remove('hidden');
+
+      // Simulate progress
+      simulateProgress();
+
+      // Call API (giả lập)
+      setTimeout(() => {
+        displayVideo(prompt, 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4');
+      }, 5000);
+    }
+
+    function simulateProgress() {
+      let progress = 0;
+      const interval = setInterval(() => {
+        progress += Math.random() * 10;
+        if (progress > 100) progress = 100;
+        
+        document.getElementById('progressFill').style.width = progress + '%';
+        
+        if (progress >= 100) {
+          clearInterval(interval);
+        }
+      }, 500);
+    }
+
+    function displayVideo(prompt, videoUrl) {
+      // Hide loading
+      document.getElementById('loadingState').classList.add('hidden');
+      
+      // Show video card
+      document.getElementById('videoCard').classList.remove('hidden');
+      document.getElementById('videoPromptDisplay').textContent = prompt;
+      
+      // Load video
+      const video = document.getElementById('videoElement');
+      video.src = videoUrl;
+      video.load();
+
+      video.addEventListener('loadedmetadata', () => {
+        const duration = formatTime(video.duration);
+        document.getElementById('videoDuration').textContent = duration;
+      });
+    }
+
+    function togglePlay() {
+      const video = document.getElementById('videoElement');
+      const overlay = document.getElementById('playOverlay');
+      const icon = document.getElementById('playIcon');
+
+      if (video.paused) {
+        video.play();
+        overlay.style.display = 'none';
+        icon.textContent = 'pause';
+      } else {
+        video.pause();
+        overlay.style.display = 'flex';
+        icon.textContent = 'play_arrow';
+      }
+    }
+
+    function formatTime(seconds) {
+      const mins = Math.floor(seconds / 60);
+      const secs = Math.floor(seconds % 60);
+      return `${mins}:${secs.toString().padStart(2, '0')}`;
+    }
+
+    function downloadVideo() {
+      const video = document.getElementById('videoElement');
+      const a = document.createElement('a');
+      a.href = video.src;
+      a.download = 'video.mp4';
+      a.click();
+    }
+
+    function deleteVideo() {
+      if (confirm('Bạn có chắc muốn xóa video này?')) {
+        document.getElementById('videoCard').classList.add('hidden');
+        document.getElementById('promptSection').classList.remove('hidden');
+        document.getElementById('promptInput').value = '';
+      }
+    }
+  </script>
+</body>
+</html>
+```
+
+***
+
+## **TÓM TẮT WORKFLOW**
+
+| Bước | Action | UI State | Thời gian |
+|------|--------|----------|-----------|
+| **1** | Nhập prompt + chọn settings | Input form visible | - |
+| **2** | Click "Tạo video" | Show loading spinner | 0s |
+| **3** | API call + Polling | Progress bar 0→100% | 10s - 6 phút |
+| **4** | Video sẵn sàng | Video card xuất hiện | - |
+| **5** | Click play | Video phát | - |
+| **6** | Download/Edit/Delete | Action modals | - |
+
+Bạn đã có toàn bộ code và workflow rồi! 🎬
+
+[1](https://labs.google/fx/vi/tools/flow/project/125966c7-418b-49da-9978-49f0a62356de)
+[2](https://labs.google/fx/vi/tools/flow/project/125966c7-418b-49da-9978-49f0a62356de)

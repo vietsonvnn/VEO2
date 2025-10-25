@@ -1,0 +1,64 @@
+[
+    {
+        "domain": "labs.google",
+        "expirationDate": 1763982998,
+        "hostOnly": true,
+        "httpOnly": false,
+        "name": "EMAIL",
+        "path": "/",
+        "sameSite": null,
+        "secure": false,
+        "session": false,
+        "storeId": null,
+        "value": "%22guagency014%40test.guagency.io.vn%22"
+    },
+    {
+        "domain": "labs.google",
+        "hostOnly": true,
+        "httpOnly": true,
+        "name": "__Host-next-auth.csrf-token",
+        "path": "/",
+        "sameSite": "lax",
+        "secure": true,
+        "session": true,
+        "storeId": null,
+        "value": "0a889b547d3139dcc6cb3c81b22c4e4e814c651171824d9039869be04323c8c0%7C219480784a452df48df9a2c5ce63e892c4d53bd53d55c7a14b03b37efecddb3d"
+    },
+    {
+        "domain": "labs.google",
+        "hostOnly": true,
+        "httpOnly": true,
+        "name": "__Secure-next-auth.callback-url",
+        "path": "/",
+        "sameSite": "lax",
+        "secure": true,
+        "session": true,
+        "storeId": null,
+        "value": "https%3A%2F%2Flabs.google%2Ffx"
+    },
+    {
+        "domain": "labs.google",
+        "expirationDate": 1764006064.51039,
+        "hostOnly": true,
+        "httpOnly": true,
+        "name": "__Secure-next-auth.session-token",
+        "path": "/",
+        "sameSite": "lax",
+        "secure": true,
+        "session": false,
+        "storeId": null,
+        "value": "eyJhbGciOiJkaXIiLCJlbmMiOiJBMjU2R0NNIn0..EdvBcXU75MhfDeWw.GYHiJMaKRkTwHq_2-xBRfQ_2LPZjFGpX8DNJqODRcfxvRcgVpsRQ1lcw9skZhwBeqk3FGM-YEWbEFeZEPL-zEnMfZX_eGRQ6TsuqPE15GgM1QrY17xzZHU4japWJ7LhBRbmfnexIpz1um-G55TsVftB8uGSZb3iqUTYt7lrwISp3Lsf7MuSSd0QzbpSSJ5efOhlqr4Ys2SFxtG6IWLVYxAF7LLT62zNQxNhOCiPdPkUSZiSwoENogyNzxeElorBuQnlTeqv9U_59R6syT3LXyqyZiXOLIYQG246iLnsPP9ulAKvsqs0ijjG-OqSzfscnbhX1oBFwcAyqd8EQCfy1v6V-sSYTmIRgvAMe6tXzbYRTTjaYPoMS-n1YAHuClvVEQlMhcrDFzCB3n81oDFQr6Pwo2nL-IHpAKtJPds_9UEbiLHZTE2sS86UAcgjjy7pD1llQL_Oz0WGQgvmldGZ-lBNC9PdX4I9Iv5Px8l-DIDUzTTLqEHSwVhD4FypXwLgw-XyXex0fUFkBNd_TARP31tUnytIAJ6_dbAVSYkXKj-A9WM28fq5ZWM9rVqmUH_WjkrBrtvDTl4HGlCQMgy2oylYZhFcS5WUJsqj6QukO709Z5-zKjJbfu3h_z-hhGuUhDWmUtepRprpmpPpuuaTBZmxjzHvHuvslKty-AfI0hW5WZRtXlsqbUz48vKQEToEF2JJNtGdy-iidMW4PvRnJEw2KtS194d-mlzK5MVfdq890CWit8PMMf-PW_MAkhmVqBHFGahkyNyu4qz2E1p7PFXyaxA8BRW7PXgNfaW5qKehI3N1ENx1dfumj8JgjljeQWZFeGlS7sQ4fVqT4AmC5nnnvOdWwudXWAVfDbCqDXdawzMPArmnKc_uNLcl-Ohpd3bA2sumXSmUXdv1JgK_x4mO7W_NJ6C8lItKW-L-armvBXPoDVZ-E3Mfex-vCa9cugHbEDOLKa8c3LtYGxl5jGv1fzCUQiWB0KbuehuB0rA.DhfNZWzzKN8na3fENSotHA"
+    },
+    {
+        "domain": "labs.google",
+        "hostOnly": true,
+        "httpOnly": true,
+        "name": "email",
+        "path": "/",
+        "sameSite": null,
+        "secure": false,
+        "session": true,
+        "storeId": null,
+        "value": "guagency014%40test.guagency.io.vn"
+    }
+]

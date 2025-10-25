@@ -1,0 +1,57 @@
+Từ ảnh màn hình bạn cung cấp, khi bạn bấm nút **Tải xuống (Download)**, sẽ xuất hiện **3 lựa chọn button**, cụ thể như sau:
+
+***
+
+### **3 Button Option khi Download**
+
+1. **Ảnh GIF động (270p)**
+   - **Text trên button:** Ảnh GIF động (270p)
+   - **Icon:** GIF  
+   - **Chức năng:** Tải về file ảnh động (GIF) với độ phân giải 270p
+
+2. **Kích thước gốc (720p)**
+   - **Text trên button:** Kích thước gốc (720p)
+   - **Icon:** Hình ảnh/phim (frame)
+   - **Chức năng:** Tải về video ở độ phân giải gốc, 720p
+
+3. **Đã tăng độ phân giải (1080p)**
+   - **Text trên button:** Đã tăng độ phân giải (1080p)
+   - **Icon:** Biểu tượng chất lượng/video  
+   - **Chức năng:** Tải video đã nâng cấp lên 1080p
+
+***
+
+### **Đề xuất Selector cho từng button:**
+
+- Nếu dùng JS/Selenium, có thể dùng selector dựa vào text hiển thị:
+```javascript
+// Button GIF
+button:contains("Ảnh GIF động (270p)")
+
+// Button 720p
+button:contains("Kích thước gốc (720p)")
+
+// Button 1080p
+button:contains("Đã tăng độ phân giải (1080p)")
+```
+
+- Nếu framework không hỗ trợ contains(), có thể tìm theo XPath:
+```xpath
+//button[contains(text(),'Ảnh GIF động (270p)')]
+//button[contains(text(),'Kích thước gốc (720p)')]
+//button[contains(text(),'Đã tăng độ phân giải (1080p)')]
+```
+
+***
+
+### **Tóm tắt cấu trúc cho auto-script**
+
+- Khi bấm nút Download (icon hoặc text), sẽ hiện popup với 3 nút trên
+- Mỗi button này là một lựa chọn tải về video ở từng chế độ phân giải
+- Bạn có thể tự động hoá chọn bất kỳ option nào bằng selector theo text như trên
+
+***
+
+Nếu bạn cần xuất mã, ví dụ cụ thể cho Selenium, Playwright, hoặc JS automation để click thứ tự các button này, hãy nói rõ lựa chọn tải về mong muốn nhé!
+
+[1](https://labs.google/fx/vi/tools/flow/project/312559a9-f8c5-4d3a-9e64-8e963cd62fac)

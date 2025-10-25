@@ -1,0 +1,150 @@
+Dựa trên phân tích trang sau khi bạn tạo video, đây là **danh sách đầy đủ các button và control** cho các hành động tiếp theo:
+
+***
+
+## **📹 CONTROL VIDEO PLAYER**
+
+### **1. Button Play/Pause**
+- **Selector:** Button có icon `play_arrow`
+- **Text/Icon:** `play_arrow` (khi pause) hoặc `pause` (khi đang play)
+- **Vị trí:** Trên mỗi video thumbnail và video player chính
+- **Chức năng:** Phát hoặc dừng video
+
+### **2. Timeline/Progress Bar**
+- **Selector:** Element có class liên quan đến timeline/progress
+- **Text hiển thị:** Thời lượng video (ví dụ: `0:08`)
+- **Vị trí:** Dưới video player
+- **Chức năng:** Hiển thị và điều khiển vị trí phát video
+
+---
+
+## **🎬 BUTTON QUẢN LÝ VIDEO**
+
+### **3. Button More Options (Menu)**
+- **Selector:** Button có icon `more_vert`
+- **Icon:** `more_vert` (ba chấm dọc)
+- **Vị trí:** Góc trên bên phải của mỗi video card
+- **Chức năng:** Mở menu với các tuỳ chọn như:
+  - Download/Tải xuống
+  - Share/Chia sẻ
+  - Delete/Xoá
+  - Rename/Đổi tên
+  - Copy link
+
+### **4. Video Thumbnail Cards**
+- **Selector:** Card chứa video với text "Nhập câu lệnh" và prompt "cherry blosssom"
+- **Text hiển thị:** 
+  - Tiêu đề: "Nhập câu lệnh"
+  - Prompt: "cherry blosssom"
+  - Thời lượng: "0:08"
+  - Ngày tạo: "25 thg 10, 2025"
+- **Vị trí:** Trong danh sách video đã tạo
+- **Chức năng:** Click để xem/chỉnh sửa video
+
+***
+
+## **⚙️ BUTTON CÀI ĐẶT VÀ TẠO MỚI**
+
+### **5. Select Model/Engine**
+- **Selector:** Element có text "Veo 3.1 - Quality"
+- **Text hiển thị:** "Veo 3.1 - Quality"
+- **Vị trí:** Phía trên textarea nhập prompt
+- **Chức năng:** Chọn engine/model để tạo video
+
+### **6. Select Video Type**
+- **Selector:** `select[node="246"]` hoặc dropdown có text "Từ văn bản sang video"
+- **Text hiển thị:** "Từ văn bản sang video" + icon `arrow_drop_down`
+- **Vị trí:** Bên cạnh engine selector
+- **Chức năng:** Chọn loại video output
+
+### **7. Aspect Ratio Selector**
+- **Selector:** Element có icon `crop_16_9` và text "x2"
+- **Text/Icon:** `crop_16_9` + "x2"
+- **Vị trí:** Bên cạnh video type selector
+- **Chức năng:** Chọn tỷ lệ khung hình
+
+### **8. Button Generate/Tạo (đã có)**
+- **Selector:** Button có text "Tạo" hoặc icon `arrow_forward`
+- **Chức năng:** Tạo video mới
+
+***
+
+## **🔍 BUTTON ĐIỀU HƯỚNG VÀ KHÁC**
+
+### **9. Chevron Navigation**
+- **Selector:** Button có icon `chevron_right`
+- **Icon:** `chevron_right`
+- **Vị trí:** Header, có 2 button chevron
+- **Chức năng:** Điều hướng qua lại giữa các view/section
+
+### **10. Notifications**
+- **Selector:** Button có text "Notifications" và shortcut `alt+T`
+- **Text:** "Notifications alt+T"
+- **Vị trí:** Header góc trái
+- **Chức năng:** Xem thông báo
+
+***
+
+## **📋 SELECTOR SUMMARY (ƯU TIÊN CAO)**
+
+```javascript
+// Video Player Controls
+const playButton = 'button[aria-label*="play"]' // hoặc icon play_arrow
+const timeline = 'div[role="slider"]' // hoặc class timeline/progress
+
+// Video Card Actions
+const moreOptionsButton = 'button[aria-label*="More"]' // icon more_vert
+const videoCard = 'div:has(> [text*="cherry blosssom"])' // card chứa video
+
+// Settings & Generation
+const modelSelector = 'button:contains("Veo 3.1")' 
+const videoTypeSelect = 'select[node="246"]'
+const aspectRatioButton = 'button:has(> [text*="crop_16_9"])'
+const generateButton = 'button:contains("Tạo")'
+
+// Textarea
+const promptInput = 'textarea[node="72"]'
+```
+
+***
+
+## **🎯 QUY TRÌNH TỰ ĐỘNG HÓA ĐẦY ĐỦ**
+
+```python
+# 1. Nhập prompt
+find_element('textarea[node="72"]').send_keys("cherry blossom")
+
+# 2. Chọn model (nếu cần)
+find_element_by_text("Veo 3.1 - Quality").click()
+
+# 3. Chọn video type
+find_element('select[node="246"]').select_by_text("Từ văn bản sang video")
+
+# 4. Chọn aspect ratio (nếu cần)
+find_element_by_icon("crop_16_9").click()
+
+# 5. Click Generate
+find_element_by_text("Tạo").click()
+
+# 6. Chờ video được tạo
+wait_for_element('button[aria-label*="play"]', timeout=120)
+
+# 7. Click video card để xem chi tiết
+find_element_by_text("cherry blosssom").click()
+
+# 8. Click play để preview
+find_element_by_icon("play_arrow").click()
+
+# 9. Mở menu options
+find_element_by_icon("more_vert").click()
+
+# 10. Download video
+find_element_by_text("Tải xuống").click()
+```
+
+***
+
+**Bạn có muốn tôi tìm thêm button cụ thể nào khác không? Hoặc xuất code tự động hoá chi tiết hơn?** 🚀
+
+[1](https://labs.google/fx/vi/tools/flow/project/312559a9-f8c5-4d3a-9e64-8e963cd62fac)
+[2](https://labs.google/fx/vi/tools/flow/project/312559a9-f8c5-4d3a-9e64-8e963cd62fac)

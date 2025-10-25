@@ -1,0 +1,535 @@
+Dựa trên phân tích chi tiết, đây là cách button **"+ Dự án mới"** hoạt động trên Flow:
+
+***
+
+## **1. Cơ chế hoạt động của button "+ Dự án mới"**
+
+### **A. Khi click button**
+
+```
+Flow Dashboard                 Click "+ Dự án mới"                 New Project Page
+(labs.google/fx/vi/tools/flow) ───────────────────────────────> (labs.google/fx/vi/tools/flow/project/{UUID})
+                                                                  
+List các project                                                 Empty project với:
+- Oct 25 - 17:38                                                 - Prompt input box
+- Oct 25 - 12:48                                                 - Settings sidebar
+- The enchanted door                                             - "Từ văn bản sang video" dropdown
+```
+
+### **B. Hành động cụ thể:**
+
+1. **Generate UUID mới** cho project
+   ```javascript
+   // Frontend tạo UUID unique
+   const projectId = generateUUID(); // VD: "f81e875e-19f7-472b-8ded-2a30c6a5a00d"
+   ```
+
+2. **Navigate sang URL mới**
+   ```
+   Từ: https://labs.google/fx/vi/tools/flow
+   Sang: https://labs.google/fx/vi/tools/flow/project/{projectId}
+   ```
+
+3. **Render empty project editor**
+   - Input box với placeholder: "Tạo một video bằng văn bản…"
+   - Settings panel bên phải với các tùy chọn
+   - Breadcrumb navigation: Flow > chevron_right > chevron_right
+
+***
+
+## **2. Cấu trúc HTML sau khi click**
+
+```html
+<!-- Page structure sau khi tạo project mới -->
+<div class="flow-project-page">
+  <!-- Header với breadcrumb -->
+  <header>
+    <nav class="breadcrumb">
+      <a href="/fx/vi/tools/flow">Flow</a>
+      <span>chevron_right</span>
+      <span>chevron_right</span>
+    </nav>
+    <button class="more-options">more_vert</button>
+  </header>
+
+  <!-- Main editor area -->
+  <main class="editor-container">
+    <div class="prompt-input-section">
+      <h2>Nhập vào ô nhập câu lệnh để bắt đầu</h2>
+      
+      <!-- Dropdown chọn mode -->
+      <div class="mode-selector">
+        <button class="dropdown">
+          Từ văn bản sang video
+          <span>arrow_drop_down</span>
+        </button>
+      </div>
+
+      <!-- Input area -->
+      <textarea 
+        placeholder="Tạo một video bằng văn bản…"
+        class="prompt-input"
+      ></textarea>
+
+      <!-- Settings preview -->
+      <div class="settings-preview">
+        <span class="aspect-ratio">crop_16_9</span>
+        <span class="output-count">x1</span>
+      </div>
+    </div>
+
+    <!-- Settings sidebar (collapsed by default) -->
+    <aside class="settings-panel">
+      <!-- Settings sẽ xuất hiện khi click vào icon settings -->
+    </aside>
+  </main>
+
+  <!-- Footer disclaimer -->
+  <footer>
+    <p>Flow có thể mắc sai sót nên bạn hãy xác minh nội dung do công cụ này tạo</p>
+  </footer>
+</div>
+```
+
+***
+
+## **3. Workflow chi tiết**
+
+```javascript
+// Pseudo-code mô phỏng flow
+class FlowProjectManager {
+  constructor() {
+    this.projectsListUrl = 'https://labs.google/fx/vi/tools/flow';
+    this.projectBaseUrl = 'https://labs.google/fx/vi/tools/flow/project/';
+  }
+
+  // Khi click "+ Dự án mới"
+  createNewProject() {
+    // Step 1: Generate unique project ID
+    const projectId = this.generateUUID();
+    
+    // Step 2: Create project object
+    const newProject = {
+      id: projectId,
+      title: '', // Empty, sẽ tự động đặt tên sau
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      videos: [],
+      settings: {
+        aspectRatio: '16:9',
+        outputCount: 1,
+        model: 'Veo 3.1 - Quality'
+      }
+    };
+
+    // Step 3: Save to backend (hoặc local storage)
+    this.saveProject(newProject);
+
+    // Step 4: Navigate to project editor
+    window.location.href = `${this.projectBaseUrl}${projectId}`;
+  }
+
+  generateUUID() {
+    // UUID v4 format
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+      const r = Math.random() * 16 | 0;
+      const v = c === 'x' ? r : (r & 0x3 | 0x8);
+      return v.toString(16);
+    });
+  }
+
+  async saveProject(project) {
+    // API call hoặc IndexedDB
+    await fetch('/api/projects', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(project)
+    });
+  }
+}
+
+// Event listener cho button
+document.querySelector('.btn-new-project').addEventListener('click', () => {
+  const manager = new FlowProjectManager();
+  manager.createNewProject();
+});
+```
+
+***
+
+## **4. State Management**
+
+### **Trước khi click:**
+```javascript
+// Dashboard state
+{
+  currentView: 'projects-list',
+  projects: [
+    { id: '312559a9-...', title: 'Oct 25 - 17:38', videos: 2 },
+    { id: 'f81e875e-...', title: 'Oct 25 - 12:48', videos: 1 },
+    // ...
+  ]
+}
+```
+
+### **Sau khi click:**
+```javascript
+// Project editor state
+{
+  currentView: 'project-editor',
+  project: {
+    id: 'f81e875e-19f7-472b-8ded-2a30c6a5a00d',
+    title: '', // Auto-generate later based on first prompt
+    createdAt: '2025-10-25T10:38:00Z',
+    videos: [],
+    settings: {
+      mode: 'text-to-video',
+      aspectRatio: '16:9',
+      outputCount: 1,
+      model: 'veo-3.1-quality'
+    }
+  },
+  ui: {
+    promptInput: '',
+    isGenerating: false,
+    settingsPanelOpen: false
+  }
+}
+```
+
+***
+
+## **5. API Calls (nếu có)**
+
+```javascript
+// POST request khi tạo project mới
+POST https://labs.google/api/flow/projects
+Headers: {
+  'Authorization': 'Bearer {token}',
+  'Content-Type': 'application/json'
+}
+Body: {
+  "projectId": "f81e875e-19f7-472b-8ded-2a30c6a5a00d",
+  "userId": "{user_id}",
+  "createdAt": "2025-10-25T10:38:00Z",
+  "settings": {
+    "aspectRatio": "16:9",
+    "model": "veo-3.1-quality"
+  }
+}
+
+// Response
+{
+  "success": true,
+  "projectId": "f81e875e-19f7-472b-8ded-2a30c6a5a00d",
+  "redirectUrl": "/fx/vi/tools/flow/project/f81e875e-19f7-472b-8ded-2a30c6a5a00d"
+}
+```
+
+***
+
+## **6. Implementation code mẫu cho tool của bạn**
+
+```html
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <title>Video Generator Tool - Dashboard</title>
+  <style>
+    .dashboard {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 30px;
+    }
+
+    .btn-new-project {
+      background: #1a73e8;
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      border-radius: 24px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      transition: background 0.2s;
+    }
+
+    .btn-new-project:hover {
+      background: #1557b0;
+    }
+
+    .projects-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 20px;
+    }
+
+    .project-card {
+      border: 1px solid #e0e0e0;
+      border-radius: 12px;
+      padding: 16px;
+      cursor: pointer;
+      transition: box-shadow 0.2s;
+    }
+
+    .project-card:hover {
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+  </style>
+</head>
+<body>
+  <div class="dashboard">
+    <div class="header">
+      <h1>📹 Video Projects</h1>
+      <button class="btn-new-project" onclick="createNewProject()">
+        <span>+</span>
+        Dự án mới
+      </button>
+    </div>
+
+    <div class="projects-grid" id="projectsList">
+      <!-- Projects sẽ được render ở đây -->
+    </div>
+  </div>
+
+  <script>
+    // Generate UUID v4
+    function generateUUID() {
+      return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+        const r = Math.random() * 16 | 0;
+        const v = c === 'x' ? r : (r & 0x3 | 0x8);
+        return v.toString(16);
+      });
+    }
+
+    // Load projects from localStorage
+    function loadProjects() {
+      const projects = JSON.parse(localStorage.getItem('video-projects') || '[]');
+      const grid = document.getElementById('projectsList');
+      
+      grid.innerHTML = projects.map(project => `
+        <div class="project-card" onclick="openProject('${project.id}')">
+          <h3>${project.title || 'Untitled Project'}</h3>
+          <p>${new Date(project.createdAt).toLocaleString('vi-VN')}</p>
+          <p>${project.videos?.length || 0} videos</p>
+        </div>
+      `).join('');
+    }
+
+    // Create new project
+    function createNewProject() {
+      const projectId = generateUUID();
+      
+      // Create project object
+      const newProject = {
+        id: projectId,
+        title: '',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        videos: [],
+        settings: {
+          aspectRatio: '16:9',
+          outputCount: 1,
+          model: 'veo-3.1-quality'
+        }
+      };
+
+      // Save to localStorage
+      const projects = JSON.parse(localStorage.getItem('video-projects') || '[]');
+      projects.unshift(newProject);
+      localStorage.setItem('video-projects', JSON.stringify(projects));
+
+      // Navigate to project editor
+      window.location.href = `/project.html?id=${projectId}`;
+    }
+
+    // Open existing project
+    function openProject(projectId) {
+      window.location.href = `/project.html?id=${projectId}`;
+    }
+
+    // Initialize
+    loadProjects();
+  </script>
+</body>
+</html>
+```
+
+### **Project Editor Page (project.html)**
+
+```html
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <title>Video Editor</title>
+  <style>
+    .editor {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+
+    .breadcrumb {
+      margin-bottom: 20px;
+      color: #666;
+    }
+
+    .prompt-section {
+      background: white;
+      border-radius: 12px;
+      padding: 24px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+
+    .prompt-input {
+      width: 100%;
+      min-height: 120px;
+      padding: 16px;
+      border: 1px solid #e0e0e0;
+      border-radius: 8px;
+      font-size: 16px;
+      resize: vertical;
+    }
+
+    .settings-bar {
+      display: flex;
+      gap: 12px;
+      margin-top: 16px;
+      align-items: center;
+    }
+
+    .btn-generate {
+      background: #1a73e8;
+      color: white;
+      border: none;
+      padding: 12px 32px;
+      border-radius: 24px;
+      font-size: 16px;
+      font-weight: 500;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <div class="editor">
+    <div class="breadcrumb">
+      <a href="/dashboard.html">← Back to Projects</a>
+    </div>
+
+    <div class="prompt-section">
+      <h2>Nhập vào ô nhập câu lệnh để bắt đầu</h2>
+      
+      <select class="mode-selector">
+        <option>Từ văn bản sang video</option>
+        <option>Từ hình ảnh sang video</option>
+      </select>
+
+      <textarea 
+        class="prompt-input" 
+        placeholder="Tạo một video bằng văn bản…"
+        id="promptInput"
+      ></textarea>
+
+      <div class="settings-bar">
+        <select>
+          <option>16:9 (Ngang)</option>
+          <option>9:16 (Dọc)</option>
+        </select>
+        
+        <select>
+          <option>x1 video</option>
+          <option>x2 videos</option>
+        </select>
+
+        <button class="btn-generate" onclick="generateVideo()">
+          Generate Video
+        </button>
+      </div>
+    </div>
+
+    <div id="videoResults"></div>
+  </div>
+
+  <script>
+    // Get project ID from URL
+    const urlParams = new URLSearchParams(window.location.search);
+    const projectId = urlParams.get('id');
+
+    function generateVideo() {
+      const prompt = document.getElementById('promptInput').value;
+      
+      if (!prompt.trim()) {
+        alert('Vui lòng nhập prompt!');
+        return;
+      }
+
+      // Call your video generation API
+      console.log('Generating video with prompt:', prompt);
+      
+      // Update project title if empty
+      const projects = JSON.parse(localStorage.getItem('video-projects') || '[]');
+      const project = projects.find(p => p.id === projectId);
+      
+      if (project && !project.title) {
+        project.title = prompt.substring(0, 50) + '...';
+        localStorage.setItem('video-projects', JSON.stringify(projects));
+      }
+    }
+  </script>
+</body>
+</html>
+```
+
+***
+
+## **7. Tóm tắt flow**
+
+```
+User clicks "+ Dự án mới"
+        ↓
+Generate UUID (client-side)
+        ↓
+Create project object with default settings
+        ↓
+Save to backend/localStorage
+        ↓
+window.location.href = `/project/${projectId}`
+        ↓
+Render empty editor with:
+  - Prompt input
+  - Settings panel
+  - Generate button
+        ↓
+User enters prompt → Generate video
+        ↓
+Auto-save project title from first prompt
+```
+
+***
+
+## **Kết luận**
+
+Button **"+ Dự án mới"** của Flow hoạt động rất đơn giản:
+1. **Generate UUID** cho project mới
+2. **Navigate** sang URL `/project/{UUID}`
+3. **Render** empty editor với settings mặc định
+4. Chờ user nhập prompt và generate
+
+Bạn có thể implement tương tự với code mẫu bên trên! 🚀
+
+[1](https://labs.google/fx/vi/tools/flow)
+[2](https://labs.google/fx/vi/tools/flow)
+[3](https://labs.google/fx/vi/tools/flow/project/f81e875e-19f7-472b-8ded-2a30c6a5a00d)
+[4](https://labs.google/fx/vi/tools/flow/project/125966c7-418b-49da-9978-49f0a62356de)

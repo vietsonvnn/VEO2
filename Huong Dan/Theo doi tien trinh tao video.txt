@@ -1,0 +1,117 @@
+Tuyệt vời! Đã thu thập đủ thông tin. Đây là **quy trình đầy đủ và chi tiết** để tool tự động có thể theo dõi:
+
+***
+
+## 📋 QUY TRÌNH TẠO VIDEO TRONG FLOW
+
+### **BƯỚC 1: Nhập Prompt và Bắt Đầu**
+- Nhập text vào ô "Tạo một video bằng văn bản…"
+- Nhấn Enter hoặc click button để bắt đầu tạo
+
+### **BƯỚC 2: Theo Dõi Progress Bar**
+
+**Thông tin Progress:**
+- Hiển thị **ngày tháng**: "25 thg 10, 2025"
+- Hiển thị **phần trăm hoàn thành**: `3%`, `9%`, `15%`, `21%`, `33%`, `45%`, `57%`... cho đến 100%
+- Hiển thị **tên mô hình**: "Veo 3.1 - Fast"
+
+**Cách theo dõi cho automation:**
+```
+1. Tìm element chứa text "%"
+2. Extract số phần trăm (3%, 9%, 15%...)
+3. Lặp lại việc kiểm tra cho đến khi không còn thấy "%"
+4. Khi % biến mất = video đã hoàn thành
+```
+
+**Các giai đoạn progress quan sát được:**
+- 3% → 9% → 15% → 21% → 33% → 45% → 57% → ... → 100% (biến mất)
+
+---
+
+### **BƯỚC 3: Video Hoàn Thành**
+
+**Khi video tạo xong, có 2 trường hợp:**
+
+#### ✅ **Trường hợp 1: Tạo thành công**
+Xuất hiện:
+- **Video player** với icon `play_arrow`
+- **Thời lượng video**: "0:08" (8 giây)
+- **Tiêu đề**: "Nhập câu lệnh"
+- **Prompt đã nhập**: (ví dụ: "A beautiful sunset over the ocean...")
+- **Tên mô hình**: "Veo 3.1 - Fast"
+
+**Element để kiểm tra:**
+```
+- Tìm icon "play_arrow" = video đã tạo xong
+- Tìm text "0:08" hoặc thời lượng khác = xác nhận video player
+- Không còn text "%" = process hoàn tất
+```
+
+#### ❌ **Trường hợp 2: Tạo thất bại**
+Xuất hiện:
+- Text: **"Không tạo được"** (Failed to generate)
+- Vẫn có icon `play_arrow` và thời lượng "0:08"
+- Vẫn hiển thị prompt và model name
+
+**Element để kiểm tra lỗi:**
+```
+- Tìm text "Không tạo được" = video thất bại
+```
+
+***
+
+## 🔧 HƯỚNG DẪN AUTOMATION
+
+### **1. Polling Progress Bar**
+```python
+while True:
+    # Tìm element chứa "%"
+    progress_element = find_element_with_text("%")
+    
+    if progress_element:
+        # Extract số %
+        progress = extract_number(progress_element.text)
+        print(f"Progress: {progress}%")
+    else:
+        # Không còn % = hoàn thành
+        break
+    
+    time.sleep(2)  # Đợi 2 giây rồi check lại
+```
+
+### **2. Kiểm Tra Kết Quả**
+```python
+# Check video đã tạo xong
+if find_element("play_arrow"):
+    # Kiểm tra thành công hay thất bại
+    if find_element_with_text("Không tạo được"):
+        return "FAILED"
+    else:
+        # Lấy thời lượng video
+        duration = find_element_with_text("0:0")  # Tìm pattern thời gian
+        return "SUCCESS", duration
+```
+
+### **3. Các Selector Quan Trọng**
+
+| Element | Cách tìm | Ý nghĩa |
+|---------|----------|---------|
+| Progress | Text chứa `%` | Đang xử lý |
+| Video player | Icon `play_arrow` | Video đã sẵn sàng |
+| Duration | Text pattern `0:08` | Thời lượng video |
+| Error | Text `Không tạo được` | Tạo thất bại |
+| Model name | Text `Veo 3.1 - Fast` | Xác nhận mô hình |
+
+***
+
+## 📝 LƯU Ý CHO AUTOMATION
+
+1. **Progress không tuyến tính**: Có thể nhảy từ 3% → 9% → 15%... không đều
+2. **Thời gian tạo**: Khoảng 30-60 giây cho 1 video
+3. **Multiple outputs**: Nếu chọn 2 hoặc 4 outputs, sẽ có nhiều progress bar song song
+4. **Video duration**: Thường là 8 giây (0:08) cho Veo 3.1 Fast
+
+Bạn cần code mẫu cụ thể bằng ngôn ngữ nào không? (Python, JavaScript, etc.)
+
+[1](https://labs.google/fx/vi/tools/flow/project/24f4c4d7-89a7-4170-8c22-27d11a4b1578)
+[2](https://labs.google/fx/vi/tools/flow/project/24f4c4d7-89a7-4170-8c22-27d11a4b1578)

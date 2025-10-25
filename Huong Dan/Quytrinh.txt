@@ -1,0 +1,71 @@
+Đã ghi nhận toàn bộ quá trình tạo video của bạn. Dưới đây là **hướng dẫn chi tiết để AI/script tự động thực hiện lại trên trang Flow**, kèm selector và trình tự các bước:
+
+***
+
+### **Hướng dẫn tự động hoá tạo video trên Google Labs Flow**
+
+**Bước 1: Nhập prompt vào ô textarea**
+- **Selector:** `textarea[node="72"]`
+- **Hành động:** Gửi nội dung prompt muốn tạo video vào ô này (dùng lệnh nhập text)
+
+**Bước 2: (Tuỳ chọn) Cài đặt scene/video**
+- **Selector:** `select[node="246"]`  
+- **Hành động:** Chọn loại output "Từ văn bản sang video" hoặc giá trị tuỳ chỉnh khác, nếu cần thay đổi
+
+**Bước 3: (Tuỳ chọn) Tuỳ chỉnh option/cài đặt**
+- **Selector:** Có thể click các nút icon như `pen_spark` hoặc nút "Cài đặt" hoặc "Mở rộng" nếu cần chỉnh sâu hơn
+
+**Bước 4: Click nút Generate (Tạo)**
+- **Selector:** Nút có icon `arrow_forward` hoặc selector text `"Tạo"`
+  - Gợi ý: `button:contains("Tạo")`, hoặc tìm nút role="button" kèm text "Tạo"
+- **Hành động:** Bấm để hệ thống bắt đầu tạo video
+
+**Bước 5: (Theo dõi) Chờ quá trình tạo video hoàn tất**
+- **Hành động:** Có thể kiểm tra trạng thái loading, hoặc chờ đến khi video được trả về
+
+**Bước 6: (Tuỳ chọn) Sử dụng các button điều chỉnh/preview**
+- **Selector:** 
+  - Preview: Nút hoặc icon `"preview"` hoặc `"Xem trước"`
+  - Sửa: Nút `"Chỉnh sửa dự án"` (`edit`)
+  - Tải xuống: Có thể là `"Export"`, `"Download"` (nếu hiện ra)
+- **Hành động:** Tùy mục tiêu, có thể bấm các nút này sau khi có kết quả
+
+***
+
+### **Phân loại các button chính và selector liên quan:**
+
+| Chức năng       | Selector                  | Thuộc tính nổi bật         |
+|-----------------|--------------------------|----------------------------|
+| Nhập prompt     | textarea[node="72"]      |                            |
+| Chọn scene      | select[node="246"]       | value/aria-haspopup        |
+| Generate/Tạo    | button:contains("Tạo")   | icon="arrow_forward"       |
+| Cài đặt/Mở rộng | icon="pen_spark", "Cài đặt" | role="button"           |
+| Xem trước/sửa   | button:contains("Chỉnh sửa dự án"), icon="edit" |          |
+| Tìm kiếm        | input[aria-label="Tìm một đoạn trích video"] |        |
+
+***
+
+### **Ví dụ code tự động (pseudo-code):**
+
+```python
+# Nhập prompt
+find_element('textarea[node="72"]').send_keys("Nội dung prompt muốn tạo video")
+
+# Chọn scene (nếu cần)
+select = find_element('select[node="246"]')
+select.select_by_visible_text("Từ văn bản sang video")
+
+# Nhấn nút Tạo (Generate)
+find_element_by_text("Tạo").click()
+# hoặc
+find_element('button:contains("Tạo")').click()
+
+# Chờ tạo video, sau đó thao tác tiếp
+# Ví dụ: Nhấn Export hoặc Preview nếu muốn
+```
+
+***
+
+**Nếu cần xuất mã mẫu cho JavaScript, Selenium, hoặc kịch bản API, hãy báo lại nhé!**
+
+[1](https://labs.google/fx/vi/tools/flow/project/312559a9-f8c5-4d3a-9e64-8e963cd62fac)

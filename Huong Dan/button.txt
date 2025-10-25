@@ -1,0 +1,53 @@
+Dưới đây là **danh sách các button quan trọng trên trang Google Labs Flow** hiện tại, gồm selector, nội dung hiển thị và phân loại chức năng:
+
+***
+
+**1. Button Generate / Tạo**
+- **Selector:** `button:contains("Tạo")` hoặc sử dụng thuộc tính nội dung `arrow_forward` kèm text "Tạo"
+- **innerText:** Tạo
+- **Thuộc tính (khả năng cao):** role="button", icon="arrow_forward"
+- **Đánh dấu:** Chức năng chính, để sinh ra nội dung video hoặc flow
+
+***
+
+**2. Button cài đặt / Mở rộng**  
+- **Selector:** button hoặc icon có nội dung `pen_spark` hoặc `Cài đặt`
+- **innerText:** Cài đặt hoặc không có text, chỉ có icon  
+- **Thuộc tính:** role="button", icon="pen_spark"  
+- **Chức năng:** Có thể mở rộng hoặc tuỳ chỉnh cảnh/video
+
+***
+
+**3. Button liên quan đến chọn cảnh loại video**  
+- **Selector:** select[node="246"]  
+- **innerText:** Từ văn bản sang video (arrow_drop_down)  
+- **Thuộc tính:** role="combobox" | aria-haspopup="listbox"  
+- **Chức năng:** Chọn loại flow/video đầu ra
+
+***
+
+**4. Button Profile/Hình ảnh hồ sơ**  
+- **Selector:** icon hoặc button có ảnh hồ sơ  
+- **innerText:** Không có hoặc hình ảnh  
+- **Chức năng:** Truy cập thông tin cá nhân/profile
+
+***
+
+**5. Các icon hoặc button nhỏ khác**
+- **Volume_up:** Điều chỉnh âm lượng
+- **search:** Tìm kiếm đoạn video
+- **help_outlined:** Truy cập trung tâm trợ giúp
+- **more_vert:** Menu tuỳ chọn
+
+***
+
+**Tóm tắt selector chức năng chính:**
+- **Tạo/generate:** `button:contains("Tạo")`, có thể kèm icon `arrow_forward`
+- **Cài đặt:** `button:contains("Cài đặt")` hoặc dựa trên icon `pen_spark`
+- **Chọn loại cảnh/video:** `select[node="246"]`
+- **Tìm kiếm:** `input[aria-label="Tìm một đoạn trích video"]`
+
+Nếu cần lập trình tự động hoặc thao tác với các button này, hãy ưu tiên selector theo nội dung và thuộc tính, kiểm tra trong Developer Tools để xác định giá trị class hoặc id cụ thể nếu được render qua JS.
+
+[1](https://labs.google/fx/vi/tools/flow/project/312559a9-f8c5-4d3a-9e64-8e963cd62fac)
+[2](https://labs.google/fx/vi/tools/flow/project/312559a9-f8c5-4d3a-9e64-8e963cd62fac)

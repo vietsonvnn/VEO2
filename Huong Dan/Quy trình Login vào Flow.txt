@@ -1,0 +1,126 @@
+Đây là quy trình **login vào Flow (labs.google/fx/tools/flow)** mà Google Labs sử dụng:
+
+***
+
+## **1. Trang chính Lab FX và nút đăng nhập**
+
+- Khi bạn vào trang chủ https://labs.google/fx sẽ thấy các sản phẩm (Flow, Whisk, ImageFX, MusicFX).
+- Giao diện sẽ hiển thị nút **"Sign in with Google" / "Đăng nhập bằng Google"**.
+- Nếu chưa đăng nhập, bất kỳ nút LAUNCH hoặc thao tác tạo dự án đều yêu cầu xác thực Google.
+
+***
+
+## **2. Quy trình login (xác thực OAuth Google)**
+
+1. **Click nút "Sign in with Google" hoặc bất kỳ nút "Launch Flow"**
+   - Sẽ xuất hiện **popup hoặc chuyển hướng đến trang OAuth của Google**:
+     ```
+     https://accounts.google.com/o/oauth2/auth
+     ```
+   - Các tham số: client_id, scope (email, profile, openid), redirect_uri → trả về access token.
+
+2. **Nhập email & mật khẩu Google, xác thực 2 bước nếu có**
+
+3. **Sau khi xác thực thành công:**
+   - Google trả về access token/ID token đến redirect_uri
+   - Browser chuyển về trang Flow:
+     ```
+     https://labs.google/fx/vi/tools/flow
+     ```
+   - Session lưu qua cookie hoặc localStorage.
+
+***
+
+## **3. Giao diện và trạng thái UI sau khi login**
+
+- Header/trang Flow sẽ hiển thị **email đăng nhập (VD: guagency014@test.guagency.io.vn)**
+- Các nút liên quan đến quản lý tài khoản:
+  - **Thêm tín dụng AI**
+  - **Thư viện của tôi**
+  - **Quản lý gói thuê bao**
+  - **Quyền riêng tư**
+  - **Điều khoản dịch vụ**
+- User được auto cấp session token, có thể tạo project, xem thư viện, sử dụng chức năng Flow đầy đủ.
+
+***
+
+## **4. HTML/CSS cơ bản của login flow**
+
+```html
+<!-- On labs.google/fx -->
+<div class="login-section">
+  <button class="btn-login-google">
+    <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google logo">
+    Đăng nhập bằng Google
+  </button>
+</div>
+
+<!-- Popup Google OAuth (redirect to Google) -->
+<form action="https://accounts.google.com/o/oauth2/auth" method="GET">
+  <input type="hidden" name="client_id" value="{google_client_id}">
+  <input type="hidden" name="redirect_uri" value="https://labs.google/fx/oauth-callback">
+  <input type="hidden" name="response_type" value="token id_token">
+  <input type="hidden" name="scope" value="openid email profile">
+  <!-- Khi submit sẽ chuyển qua Google để xác thực -->
+</form>
+```
+
+***
+
+## **5. Network/API**
+
+- Khi đăng nhập, browser sẽ thực hiện các request sau:
+  - **GET** đến endpoint Google OAuth để xác thực
+  - Sau khi login thành công, **POST** access token về backend Flow để lấy session
+  - Session kiểm tra lại `user_id`, `email`, `credits`, `subscription`
+  - Nếu thất bại, trả về thông báo lỗi (missing consent/sai tài khoản)
+
+***
+
+## **6. Xử lý trạng thái sau login**
+
+- Nếu thành công:
+  - Flow hiển thị mọi chức năng, tạo được project, xem credits của tài khoản
+- Nếu thất bại:
+  - Hiện thông báo “Xác thực thất bại”, yêu cầu thử lại hoặc đổi account
+
+***
+
+## **7. Tóm tắt quy trình**
+
+```
+1. Vào labs.google/fx
+2. Click "Sign in with Google"
+3. Gặp popup/redirect đăng nhập Google OAuth
+4. Nhập email/mật khẩu → Xác thực
+5. Được cấp access token
+6. Quay lại Flow, đã đăng nhập (email/tín dụng/setting)
+7. Dùng đầy đủ chức năng của Flow: tạo, tải, chỉnh sửa, quản lý dự án
+```
+
+***
+
+## **Kết luận**
+
+- **Login vào Flow là OAuth Google, không phải đăng ký riêng.**
+- Sau login, toàn bộ chức năng Flow được mở, trạng thái lưu bằng token/session.  
+- Nếu bạn dùng API hoặc tích hợp, đều phải xác thực qua Google SSO.  
+- Logic OAuth này hoàn toàn phổ biến cho mọi sản phẩm Google Labs.
+
+[1](https://labs.google/fx)
+[2](https://labs.google/fx/faq)
+[3](https://labs.google/fx/tools/flow)
+[4](https://support.google.com/a/users?p=gws_ai_ultra_credits&amp;ms=pt:1057;s:954;vp:9)
+[5](https://support.google.com/a/users?p=gws_ai_ultra_credits&amp;ms=pt:1057;s:958;vp:9)
+[6](https://labs.google/fx/vi/library?type=videofx)
+[7](https://support.google.com/a/users?p=gws_ai_ultra&amp;ms=pt:1070;s:955)
+[8](https://policies.google.com/privacy?hl=vi)
+[9](https://policies.google.com/terms?hl=vi)
+[10](https://labs.google/fx/third-party-licenses.txt)
+[11](https://labs.google/fx/vi/tools/flow)
+[12](https://labs.google/fx/vi/tools/flow/project/19a772fa-fc56-411c-b302-e3e163b2f43d)
+[13](https://labs.google/fx/vi/tools/flow/project/6c085c85-d862-4069-ab3c-c8be7733b959)
+[14](https://labs.google/fx/vi/tools/flow/project/c6a493bd-f0ab-493d-ab80-8051bac8ef62)
+[15](https://labs.google/fx/vi/tools/flow/project/b1137803-fb19-49d7-8e1e-1bcc8abe4c35)
+[16](https://labs.google/fx/vi/tools/flow/project/9193762e-078d-48de-b0b7-42c694047a24)
+[17](https://labs.google/fx/vi/tools/flow/project/125966c7-418b-49da-9978-49f0a62356de)

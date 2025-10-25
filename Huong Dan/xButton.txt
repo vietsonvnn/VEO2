@@ -1,0 +1,335 @@
+Hoàn hảo! Đã trích xuất thành công tất cả selector chính xác. Dưới đây là **danh sách đầy đủ và chính xác** các selector bạn cần:
+
+---
+
+# 🎯 SELECTORS CHÍNH XÁC - GOOGLE LABS FLOW
+
+## **1. POPUP 3 OPTIONS QUALITY**
+
+### **Popup Container:**
+- **Element:** `<menu aria-current="true" aria-label="download Tải xuống">`
+- **Selector:** 
+  ```css
+  menu[aria-label="download Tải xuống"]
+  ```
+  hoặc
+  ```css
+  menu[aria-current="true"]
+  ```
+
+***
+
+### **Button 1 - GIF 270p:**
+- **Element:** `<menuitem>`
+- **Text chính xác:** **"Ảnh GIF động (270p)"**
+- **Icon:** `gif_box`
+- **Cấu trúc HTML:**
+  ```html
+  <menuitem node="12683">
+    gif_box<br/>Ảnh GIF động (270p)
+  </menuitem>
+  ```
+- **Selectors:**
+  ```css
+  menuitem:has-text("Ảnh GIF động (270p)")
+  ```
+  ```xpath
+  //menuitem[contains(text(),'Ảnh GIF động (270p)')]
+  ```
+  ```css
+  menuitem:has-text("gif_box")
+  ```
+
+***
+
+### **Button 2 - 720p:**
+- **Element:** `<menuitem>`
+- **Text chính xác:** **"Kích thước gốc (720p)"**
+- **Icon:** `capture`
+- **Cấu trúc HTML:**
+  ```html
+  <menuitem node="12684">
+    capture<br/>Kích thước gốc (720p)
+  </menuitem>
+  ```
+- **Selectors:**
+  ```css
+  menuitem:has-text("Kích thước gốc (720p)")
+  ```
+  ```xpath
+  //menuitem[contains(text(),'Kích thước gốc (720p)')]
+  ```
+  ```css
+  menuitem:has-text("capture")
+  ```
+
+***
+
+### **Button 3 - 1080p:**
+- **Element:** `<menuitem>`
+- **Text chính xác:** **"Đã tăng độ phân giải (1080p)"**
+- **Icon:** `aspect_ratio`
+- **Cấu trúc HTML:**
+  ```html
+  <menuitem node="12685">
+    aspect_ratio<br/>Đã tăng độ phân giải (1080p)
+  </menuitem>
+  ```
+- **Selectors:**
+  ```css
+  menuitem:has-text("Đã tăng độ phân giải (1080p)")
+  ```
+  ```xpath
+  //menuitem[contains(text(),'Đã tăng độ phân giải (1080p)')]
+  ```
+  ```css
+  menuitem:has-text("aspect_ratio")
+  ```
+
+***
+
+## **2. NOTIFICATION UPSCALE**
+
+### **Notification Container:**
+- **Element:** `<section aria-label="Notifications alt+T" aria-live="polite" aria-relevant="additions text">`
+- **Nested structure:** `<ul><li>notification content</li></ul>`
+- **Selector:**
+  ```css
+  section[aria-label="Notifications alt+T"]
+  ```
+  ```css
+  section[aria-live="polite"]
+  ```
+
+***
+
+### **A. Notification Đang Xử Lý (Processing):**
+
+- **Text chính xác:** 
+  ```
+  "Đang tăng độ phân giải cho video của bạn (không mất tín dụng). Quá trình này có thể mất vài phút."
+  ```
+
+- **Cấu trúc HTML:**
+  ```html
+  <li node="11426">
+    Đang tăng độ phân giải cho video của bạn (không mất tín dụng). 
+    Quá trình này có thể mất vài phút.
+    <button node="12695">Đóng</button>
+  </li>
+  ```
+
+- **Selectors để check đang upscale:**
+  ```css
+  li:has-text("Đang tăng độ phân giải")
+  ```
+  ```xpath
+  //li[contains(text(),'Đang tăng độ phân giải cho video của bạn')]
+  ```
+  ```javascript
+  // Playwright
+  await page.locator('text=Đang tăng độ phân giải').isVisible()
+  ```
+
+- **Button Đóng:**
+  ```css
+  button:has-text("Đóng")
+  ```
+
+***
+
+### **B. Notification Hoàn Tất (Success):**
+
+- **Icon:** `check_circle` (icon success)
+- **Text chính xác:** 
+  ```
+  "Đã xong việc tăng độ phân giải!"
+  ```
+
+- **Cấu trúc HTML:**
+  ```html
+  <li node="12699">
+    check_circle<br/>
+    Đã xong việc tăng độ phân giải!
+    Tải xuống
+    <button node="12695">Đóng</button>
+  </li>
+  ```
+
+- **Selectors để check upscale xong:**
+  ```css
+  li:has-text("Đã xong việc tăng độ phân giải!")
+  ```
+  ```xpath
+  //li[contains(text(),'Đã xong việc tăng độ phân giải!')]
+  ```
+  ```css
+  li:has-text("check_circle")
+  ```
+  ```javascript
+  // Playwright
+  await page.locator('text=Đã xong việc tăng độ phân giải!').isVisible()
+  ```
+
+***
+
+## **3. BUTTON DOWNLOAD CUỐI CÙNG (TRONG NOTIFICATION)**
+
+### **⚠️ LƯU Ý QUAN TRỌNG:**
+
+Text "Tải xuống" trong notification **KHÔNG phải là một `<button>` riêng biệt**, mà là **text nằm trong `<li>` element** của notification.
+
+### **Cấu trúc thực tế:**
+```html
+<li node="12699">
+  check_circle<br/>
+  Đã xong việc tăng độ phân giải!
+  Tải xuống          <!-- Plain text, không phải button -->
+  <button node="12695">Đóng</button>
+</li>
+```
+
+### **Cách click để download:**
+
+**Option 1: Click vào text "Tải xuống" trong notification**
+```javascript
+// Playwright
+await page.locator('li:has-text("Đã xong việc tăng độ phân giải!")').locator('text=Tải xuống').click();
+```
+
+**Option 2: Click vào toàn bộ notification item**
+```javascript
+// Click vào li element chứa text "Đã xong việc tăng độ phân giải!"
+await page.locator('li:has-text("Đã xong việc tăng độ phân giải!")').click();
+```
+
+**Option 3: XPath chính xác**
+```xpath
+//li[contains(text(),'Đã xong việc tăng độ phân giải!')]/text()[contains(.,'Tải xuống')]
+```
+
+### **Phân biệt với button "Tải xuống" ở action bar:**
+
+| Vị trí | Element Type | Selector | Attributes |
+|--------|-------------|----------|------------|
+| **Action bar** | `<button>` | `button[aria-haspopup="menu"]` | Has `aria-haspopup="menu"` |
+| **Notification** | Text trong `<li>` | `li:has-text("Đã xong") >> text=Tải xuống` | No button wrapper |
+
+***
+
+## **📊 BẢNG TỔNG HỢP SELECTORS**
+
+| Element | Text Chính Xác | Selector Khuyến Nghị |
+|---------|----------------|---------------------|
+| **Popup container** | - | `menu[aria-label="download Tải xuống"]` |
+| **Button GIF 270p** | "Ảnh GIF động (270p)" | `menuitem:has-text("Ảnh GIF động (270p)")` |
+| **Button 720p** | "Kích thước gốc (720p)" | `menuitem:has-text("Kích thước gốc (720p)")` |
+| **Button 1080p** | "Đã tăng độ phân giải (1080p)" | `menuitem:has-text("Đã tăng độ phân giải (1080p)")` |
+| **Notification container** | - | `section[aria-label="Notifications alt+T"]` |
+| **Processing notification** | "Đang tăng độ phân giải cho video của bạn..." | `li:has-text("Đang tăng độ phân giải")` |
+| **Success notification** | "Đã xong việc tăng độ phân giải!" | `li:has-text("Đá xong việc tăng độ phân giải!")` |
+| **Download link in notification** | "Tải xuống" (text trong li) | `li:has-text("Đã xong") >> text=Tải xuống` |
+| **Close button** | "Đóng" | `button:has-text("Đóng")` |
+
+***
+
+## **💻 CODE MẪU HOÀN CHỈNH**
+
+```javascript
+// ============================================
+// BƯỚC 5: MỞ MENU DOWNLOAD
+// ============================================
+console.log('📥 Mở menu download...');
+await page.click('button[aria-haspopup="menu"]:has-text("Tải xuống")');
+await page.waitForSelector('menu[aria-label="download Tải xuống"]');
+
+// ============================================
+// BƯỚC 6: CHỌN 1080P
+// ============================================
+console.log('🎬 Chọn 1080p...');
+await page.click('menuitem:has-text("Đã tăng độ phân giải (1080p)")');
+
+// ============================================
+// BƯỚC 7: CHỜ UPSCALE
+// ============================================
+console.log('⏳ Chờ upscale...');
+
+// Chờ notification processing xuất hiện
+await page.waitForSelector('li:has-text("Đang tăng độ phân giải")', { timeout: 10000 });
+
+// Polling check cho đến khi upscale xong
+let isUpscaling = true;
+let attempts = 0;
+const maxAttempts = 60; // 5 phút
+
+while (isUpscaling && attempts < maxAttempts) {
+  await page.waitForTimeout(5000);
+  
+  // Check notification success xuất hiện
+  const successNotification = await page.$('li:has-text("Đã xong việc tăng độ phân giải!")');
+  
+  if (successNotification) {
+    isUpscaling = false;
+    console.log('✅ Upscale hoàn tất!');
+  }
+  
+  attempts++;
+  if (attempts % 6 === 0) {
+    console.log(`⏳ Đã chờ ${attempts * 5} giây...`);
+  }
+}
+
+if (attempts >= maxAttempts) {
+  throw new Error('Timeout: Upscale quá lâu');
+}
+
+// ============================================
+// BƯỚC 8: DOWNLOAD FILE
+// ============================================
+console.log('📥 Click download trong notification...');
+
+// Setup download handler
+const downloadPromise = page.waitForEvent('download');
+
+// Click vào text "Tải xuống" trong notification
+await page.locator('li:has-text("Đã xong việc tăng độ phân giải!")')
+  .locator('text=Tải xuống')
+  .click();
+
+// Chờ download
+const download = await downloadPromise;
+const filePath = await download.path();
+
+console.log('✅ Video đã tải về:', filePath);
+await download.saveAs('./videos/output.mp4');
+```
+
+***
+
+## **🔍 LƯU Ý QUAN TRỌNG**
+
+### **1. Button vs Text**
+- **Popup 3 options:** Sử dụng `<menuitem>` elements
+- **Download trong notification:** Là **text thuần**, không phải button
+- Cần click vào text hoặc parent `<li>` element
+
+### **2. Notification Timing**
+- Processing notification xuất hiện ngay sau khi chọn 1080p
+- Success notification thay thế processing notification khi xong
+- Không có transition animation, chỉ replace content
+
+### **3. Node IDs**
+- Node IDs động, thay đổi mỗi lần render
+- Không nên dựa vào node IDs cố định
+- Sử dụng text content hoặc aria-label thay thế
+
+### **4. Multiple Videos**
+- Nếu có nhiều video, notification vẫn chỉ có 1
+- Notification luôn liên quan đến video được thao tác gần nhất
+
+***
+
+**Đây là toàn bộ selectors chính xác với text đầy đủ để tự động hóa quy trình download video 1080p!** 🎉
+
+[1](https://labs.google/fx/vi/tools/flow/project/312559a9-f8c5-4d3a-9e64-8e963cd62fac)
+[2](https://labs.google/fx/vi/tools/flow/project/312559a9-f8c5-4d3a-9e64-8e963cd62fac)

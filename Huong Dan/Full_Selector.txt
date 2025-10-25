@@ -1,0 +1,527 @@
+Dưới đây là **tài liệu hướng dẫn đầy đủ** về quy trình tạo, chỉnh sửa config và download video từ Google Labs Flow, bao gồm tất cả các button, selector, và lưu ý quan trọng cho việc tự động hóa:
+
+***
+
+# 📖 HƯỚNG DẪN ĐẦY ĐỦ: QUY TRÌNH TẠO VÀ TẢI VIDEO TRÊN GOOGLE LABS FLOW
+
+## 🎯 TỔNG QUAN QUY TRÌNH
+
+**Mục tiêu:** Tự động hóa việc tạo video từ text prompt và tải video về máy ở độ phân giải 1080p
+
+**Các bước chính:**
+1. Nhập prompt tạo video
+2. Cấu hình các tuỳ chọn (model, video type, aspect ratio)
+3. Generate video
+4. Chờ video được tạo xong
+5. Mở menu download
+6. Chọn độ phân giải 1080p
+7. Chờ upscale video
+8. Download file về máy
+
+---
+
+## 📝 CHI TIẾT TỪNG BƯỚC
+
+### **BƯỚC 1: NHẬP PROMPT**
+
+**Mô tả:** Nhập nội dung văn bản mô tả video muốn tạo
+
+**Element:**
+- **Type:** Textarea
+- **Selector chính:** `textarea[node="72"]`
+- **Selector phụ:** `textarea[placeholder*="Tạo một video bằng văn bản"]`
+- **Hành động:** Nhập text prompt
+- **Ví dụ:** "cherry blossom", "sunset over ocean", "city at night"
+
+**Code mẫu:**
+```javascript
+await page.fill('textarea[node="72"]', 'cherry blossom');
+```
+
+**Lưu ý:**
+- Prompt nên rõ ràng, mô tả cụ thể
+- Độ dài khuyến nghị: 5-50 từ
+- Có thể sử dụng tiếng Anh hoặc tiếng Việt
+
+***
+
+### **BƯỚC 2: CẤU HÌNH TUỲ CHỌN (OPTIONAL)**
+
+#### **2.1. Chọn Model/Engine**
+- **Text hiển thị:** "Veo 3.1 - Quality"
+- **Selector:** `button:has-text("Veo 3.1")` hoặc element chứa text "Veo 3.1 - Quality"
+- **Chức năng:** Chọn AI model để generate video
+- **Mặc định:** Veo 3.1 - Quality
+
+#### **2.2. Chọn Video Type**
+- **Text hiển thị:** "Từ văn bản sang video"
+- **Icon:** `arrow_drop_down`
+- **Selector:** `select[node="246"]`
+- **Type:** Dropdown/Select
+- **Chức năng:** Chọn loại output (text-to-video, image-to-video, etc.)
+- **Mặc định:** Từ văn bản sang video
+
+#### **2.3. Chọn Aspect Ratio**
+- **Text hiển thị:** "x2"
+- **Icon:** `crop_16_9`
+- **Selector:** Button chứa icon `crop_16_9`
+- **Chức năng:** Chọn tỷ lệ khung hình video
+- **Options:** 16:9, 9:16, 1:1, etc.
+
+**Code mẫu:**
+```javascript
+// Chọn video type nếu cần
+await page.selectOption('select[node="246"]', 'Từ văn bản sang video');
+
+// Chọn aspect ratio nếu cần
+await page.click('button:has([class*="crop_16_9"])');
+```
+
+***
+
+### **BƯỚC 3: GENERATE VIDEO**
+
+**Mô tả:** Click nút để bắt đầu tạo video
+
+**Element:**
+- **Text:** "Tạo"
+- **Icon:** `arrow_forward`
+- **Selector chính:** `button:has-text("Tạo")`
+- **Selector phụ:** `button:has([class*="arrow_forward"])`
+- **Vị trí:** Bên phải textarea, cuối dòng
+
+**Code mẫu:**
+```javascript
+await page.click('button:has-text("Tạo")');
+```
+
+**Lưu ý:**
+- Sau khi click, màn hình sẽ hiển thị loading
+- Không spam click nhiều lần
+- Thời gian tạo video: 30 giây - 2 phút tùy độ phức tạp
+
+***
+
+### **BƯỚC 4: CHỜ VIDEO ĐƯỢC TẠO XONG**
+
+**Mô tả:** Chờ hệ thống render video hoàn tất
+
+**Dấu hiệu video đã xong:**
+- Video card xuất hiện với thumbnail
+- Button play (`play_arrow`) xuất hiện
+- Hiển thị thời lượng video (ví dụ: "0:08")
+- Hiển thị ngày tạo (ví dụ: "25 thg 10, 2025")
+- Hiển thị prompt đã nhập (ví dụ: "cherry blossom")
+
+**Element để check:**
+- **Play button:** `button[aria-label*="play"]` hoặc button có icon `play_arrow`
+- **Video duration:** Text hiển thị thời lượng (ví dụ: "0:08")
+- **Video card:** Container chứa video với prompt text
+
+**Code mẫu:**
+```javascript
+// Chờ video card xuất hiện (timeout 120 giây)
+await page.waitForSelector('button[aria-label*="play"]', { timeout: 120000 });
+
+// Hoặc chờ duration xuất hiện
+await page.waitForSelector('text=0:', { timeout: 120000 });
+
+console.log('✅ Video đã được tạo xong');
+```
+
+**Lưu ý:**
+- Timeout nên set 120-180 giây
+- Có thể có nhiều video cards nếu đã tạo trước đó
+- Video mới nhất thường ở đầu danh sách
+
+---
+
+### **BƯỚC 5: MỞ MENU DOWNLOAD**
+
+**Mô tả:** Click vào button để mở menu lựa chọn download
+
+**Element:**
+- **Text:** "Tải xuống"
+- **Icon:** `download` hoặc `more_vert`
+- **Selector chính:** `button:has-text("Tải xuống")`
+- **Selector phụ:** `button:has([class*="download"])`
+- **Vị trí:** Trên video card, trong action bar
+
+**Code mẫu:**
+```javascript
+// Click vào nút download trên video mới nhất
+await page.click('button:has-text("Tải xuống")');
+
+// Hoặc với context cụ thể
+await page.locator('text=cherry blossom')
+  .locator('..')
+  .locator('button:has-text("Tải xuống")')
+  .first()
+  .click();
+```
+
+**Lưu ý:**
+- Sau khi click, menu popup sẽ xuất hiện với 3 options
+- Menu có thể mất 0.5-1 giây để render
+
+***
+
+### **BƯỚC 6: CHỌN ĐỘ PHÂN GIẢI (MENU 3 OPTIONS)**
+
+**Mô tả:** Sau khi mở menu download, chọn độ phân giải mong muốn
+
+**3 Options xuất hiện:**
+
+#### **Option 1: Ảnh GIF động (270p)**
+- **Text:** "Ảnh GIF động (270p)"
+- **Icon:** `gif_box`
+- **Selector:** `button:has-text("Ảnh GIF động (270p)")`
+- **Output:** File GIF animated, độ phân giải thấp
+- **Kích thước file:** Nhỏ (~1-5 MB)
+- **Use case:** Chia sẻ nhanh, preview
+
+#### **Option 2: Kích thước gốc (720p)**
+- **Text:** "Kích thước gốc (720p)"
+- **Icon:** `capture`
+- **Selector:** `button:has-text("Kích thước gốc (720p)")`
+- **Output:** Video MP4, độ phân giải gốc
+- **Kích thước file:** Trung bình (~10-30 MB)
+- **Use case:** Sử dụng thông thường
+
+#### **Option 3: Đã tăng độ phân giải (1080p)** ⭐ KHUYẾN NGHỊ
+- **Text:** "Đã tăng độ phân giải (1080p)"
+- **Icon:** `aspect_ratio`
+- **Selector:** `button:has-text("Đã tăng độ phân giải (1080p)")`
+- **Output:** Video MP4, độ phân giải cao
+- **Kích thước file:** Lớn (~30-100 MB)
+- **Use case:** Chất lượng cao, production
+
+**Code mẫu - Chọn 1080p:**
+```javascript
+// Chờ menu xuất hiện
+await page.waitForSelector('button:has-text("1080p")');
+
+// Click option 1080p
+await page.click('button:has-text("Đã tăng độ phân giải (1080p)")');
+
+console.log('✅ Đã chọn option 1080p');
+```
+
+**Lưu ý:**
+- Option 1080p cần thời gian upscale thêm (bước 7)
+- Option 720p và GIF download ngay lập tức
+- Chỉ chọn 1 trong 3 options
+
+***
+
+### **BƯỚC 7: CHỜ UPSCALE VIDEO (CHỈ VỚI 1080P)**
+
+**Mô tả:** Sau khi chọn 1080p, hệ thống sẽ upscale video
+
+**Thông báo xuất hiện:**
+- **Text:** "Đang tăng độ phân giải cho video của bạn (không mất tín dụng). Quá trình này có thể mất vài phút."
+- **Vị trí:** Góc trên bên phải màn hình (notification area)
+- **Icon:** Loading spinner
+
+**Thời gian upscale:**
+- Video ngắn (5-10s): 1-2 phút
+- Video trung bình (10-30s): 2-5 phút
+- Video dài (>30s): 5-10 phút
+
+**Dấu hiệu upscale xong:**
+- Thông báo biến mất hoặc đổi thành "Đóng"
+- Button "Tải xuống" cuối cùng xuất hiện
+- Không còn loading spinner
+
+**Code mẫu:**
+```javascript
+// Chờ notification xuất hiện
+await page.waitForSelector('text=Đang tăng độ phân giải', { timeout: 5000 });
+
+// Chờ upscale hoàn tất (polling)
+let isUpscaling = true;
+let attempts = 0;
+const maxAttempts = 60; // 5 phút (60 x 5s)
+
+while (isUpscaling && attempts < maxAttempts) {
+  await page.waitForTimeout(5000);
+  
+  // Check xem notification còn không
+  const notification = await page.$('text=Đang tăng độ phân giải');
+  if (!notification) {
+    isUpscaling = false;
+  }
+  
+  attempts++;
+}
+
+if (attempts >= maxAttempts) {
+  throw new Error('Timeout: Upscale video quá lâu');
+}
+
+console.log('✅ Upscale 1080p hoàn tất');
+```
+
+**Lưu ý:**
+- Quá trình này KHÔNG tốn credit/tín dụng
+- Có thể tiếp tục làm việc khác trong khi chờ
+- Nếu quá lâu, có thể refresh page và thử lại
+
+***
+
+### **BƯỚC 8: DOWNLOAD FILE VỀ MÁY**
+
+**Mô tả:** Sau khi upscale xong (hoặc chọn 720p/GIF), click button để tải file về máy
+
+**Element:**
+- **Text:** "Tải xuống"
+- **Icon:** `download`
+- **Selector:** `button:has-text("Tải xuống")`
+- **Vị trí:** Trong action bar của video card, cạnh các nút:
+  - Sao chép
+  - Tải xuống ⭐
+  - Lật thẻ
+  - Thêm vào cảnh
+  - Chỉnh sửa dự án
+  - Yêu thích
+  - Toàn màn hình
+  - Tuỳ chọn khác
+
+**Phân biệt với button Bước 5:**
+- **Bước 5:** Mở menu 3 options (trước khi upscale)
+- **Bước 8:** Download file thực sự (sau khi upscale xong)
+- Cùng text "Tải xuống" nhưng xuất hiện ở thời điểm khác nhau
+
+**Code mẫu:**
+```javascript
+// Chờ button download final xuất hiện
+await page.waitForSelector('button:has-text("Tải xuống")');
+
+// Setup download handler
+const downloadPromise = page.waitForEvent('download');
+
+// Click download
+await page.click('button:has-text("Tải xuống")');
+
+// Chờ download bắt đầu
+const download = await downloadPromise;
+
+// Lấy path file
+const filePath = await download.path();
+console.log('✅ Video đã tải về:', filePath);
+
+// Hoặc save với tên custom
+await download.saveAs('./videos/cherry-blossom.mp4');
+```
+
+**Lưu ý:**
+- Browser cần enable download permissions
+- File sẽ được tải về folder Downloads mặc định
+- Tên file thường là: `flow-[timestamp].mp4`
+- Có thể rename file sau khi download
+
+***
+
+## 🎯 BẢNG TỔNG HỢP SELECTORS
+
+| Bước | Mô tả | Selector chính | Selector phụ |
+|------|-------|----------------|--------------|
+| 1 | Textarea nhập prompt | `textarea[node="72"]` | `textarea[placeholder*="Tạo một video"]` |
+| 2.1 | Chọn model | `button:has-text("Veo 3.1")` | Element text "Veo 3.1 - Quality" |
+| 2.2 | Chọn video type | `select[node="246"]` | Dropdown "Từ văn bản sang video" |
+| 2.3 | Chọn aspect ratio | `button:has([class*="crop_16_9"])` | Button có icon crop |
+| 3 | Button Generate | `button:has-text("Tạo")` | `button:has([class*="arrow_forward"])` |
+| 4 | Check video xong | `button[aria-label*="play"]` | `text=0:` (duration) |
+| 5 | Mở menu download | `button:has-text("Tải xuống")` | `button:has([class*="download"])` |
+| 6.1 | Option GIF 270p | `button:has-text("Ảnh GIF động (270p)")` | `button:has([class*="gif_box"])` |
+| 6.2 | Option 720p | `button:has-text("Kích thước gốc (720p)")` | `button:has([class*="capture"])` |
+| 6.3 | Option 1080p | `button:has-text("Đã tăng độ phân giải (1080p)")` | `button:has([class*="aspect_ratio"])` |
+| 7 | Check upscale | `text=Đang tăng độ phân giải` | Notification area |
+| 8 | Download final | `button:has-text("Tải xuống")` | Same as step 5, different timing |
+
+***
+
+## 🔧 CODE MẪU HOÀN CHỈNH (PLAYWRIGHT)
+
+```javascript
+const { chromium } = require('playwright');
+
+async function createAndDownloadFlowVideo(prompt, outputPath) {
+  const browser = await chromium.launch({ headless: false });
+  const context = await browser.newContext({
+    acceptDownloads: true
+  });
+  const page = await context.newPage();
+  
+  try {
+    console.log('🚀 Bắt đầu quy trình tạo video...');
+    
+    // Điều hướng đến Flow
+    await page.goto('https://labs.google/fx/vi/tools/flow');
+    
+    // Bước 1: Nhập prompt
+    console.log('📝 Nhập prompt:', prompt);
+    await page.fill('textarea[node="72"]', prompt);
+    await page.waitForTimeout(500);
+    
+    // Bước 2: Cấu hình (optional - bỏ qua nếu dùng default)
+    
+    // Bước 3: Click Generate
+    console.log('⚡ Generate video...');
+    await page.click('button:has-text("Tạo")');
+    
+    // Bước 4: Chờ video được tạo xong
+    console.log('⏳ Chờ video được tạo...');
+    await page.waitForSelector('button[aria-label*="play"]', { 
+      timeout: 120000 
+    });
+    console.log('✅ Video đã được tạo xong');
+    
+    // Bước 5: Mở menu download
+    console.log('📥 Mở menu download...');
+    await page.click('button:has-text("Tải xuống")');
+    await page.waitForTimeout(1000);
+    
+    // Bước 6: Chọn 1080p
+    console.log('🎬 Chọn độ phân giải 1080p...');
+    await page.click('button:has-text("Đã tăng độ phân giải (1080p)")');
+    
+    // Bước 7: Chờ upscale
+    console.log('⏳ Chờ upscale 1080p (có thể mất vài phút)...');
+    await page.waitForTimeout(5000);
+    
+    let isUpscaling = true;
+    let attempts = 0;
+    const maxAttempts = 60;
+    
+    while (isUpscaling && attempts < maxAttempts) {
+      await page.waitForTimeout(5000);
+      const notification = await page.$('text=Đang tăng độ phân giải');
+      if (!notification) {
+        isUpscaling = false;
+      }
+      attempts++;
+      
+      if (attempts % 6 === 0) {
+        console.log(`⏳ Đã chờ ${attempts * 5} giây...`);
+      }
+    }
+    
+    if (attempts >= maxAttempts) {
+      throw new Error('Timeout: Upscale quá lâu');
+    }
+    
+    console.log('✅ Upscale hoàn tất');
+    await page.waitForTimeout(2000);
+    
+    // Bước 8: Download file
+    console.log('📥 Tải video về máy...');
+    const downloadPromise = page.waitForEvent('download');
+    await page.click('button:has-text("Tải xuống")');
+    
+    const download = await downloadPromise;
+    await download.saveAs(outputPath);
+    
+    console.log('✅ Đã tải video về:', outputPath);
+    
+    return outputPath;
+    
+  } catch (error) {
+    console.error('❌ Lỗi:', error.message);
+    throw error;
+  } finally {
+    await browser.close();
+  }
+}
+
+// Sử dụng
+createAndDownloadFlowVideo(
+  'cherry blossom in spring', 
+  './videos/cherry-blossom.mp4'
+);
+```
+
+***
+
+## ⚠️ LƯU Ý QUAN TRỌNG
+
+### **1. Timing & Waiting**
+- Luôn có wait time hợp lý giữa các bước
+- Video generation: 30s - 2 phút
+- Upscale 1080p: 1-5 phút
+- Không spam click buttons
+
+### **2. Multiple Videos**
+- Nếu có nhiều video trên trang, cần xác định đúng video card
+- Sử dụng context selector với prompt text
+- Video mới nhất thường ở đầu danh sách
+
+### **3. Error Handling**
+- Xử lý timeout khi video generation quá lâu
+- Xử lý trường hợp upscale fail
+- Retry logic cho network issues
+
+### **4. Selectors**
+- Selector dựa vào text có thể thay đổi tùy ngôn ngữ
+- Selector `button:has-text("Tải xuống")` xuất hiện 2 lần (bước 5 và 8)
+- Cần phân biệt bằng timing/context
+
+### **5. Authentication**
+- Cần đăng nhập Google account trước
+- Browser context phải có cookies/session
+- Có thể cần xử lý 2FA
+
+### **6. Rate Limits**
+- Google Labs có thể có giới hạn số video/ngày
+- Không spam generate quá nhiều video liên tục
+- Có credit/quota system (cần check)
+
+### **7. Browser Requirements**
+- Cần browser modern (Chrome, Edge, Firefox)
+- Enable JavaScript
+- Enable downloads
+- Đủ dung lượng ổ cứng
+
+***
+
+## 📊 FLOWCHART QUY TRÌNH
+
+```
+START
+  ↓
+[1. Nhập Prompt] → textarea[node="72"]
+  ↓
+[2. Config (Optional)] → Model/Type/Aspect Ratio
+  ↓
+[3. Click Generate] → button:has-text("Tạo")
+  ↓
+[4. Chờ Video Xong] → Wait for play button
+  ↓
+[5. Mở Menu Download] → button:has-text("Tải xuống") #1
+  ↓
+[6. Chọn 1080p] → button:has-text("...1080p)")
+  ↓
+[7. Chờ Upscale] → Wait for notification gone
+  ↓
+[8. Download File] → button:has-text("Tải xuống") #2
+  ↓
+END (File saved to disk)
+```
+
+***
+
+## 🎓 BEST PRACTICES
+
+1. **Logging:** Log mỗi bước để debug dễ dàng
+2. **Screenshots:** Chụp màn hình ở các bước quan trọng
+3. **Error Recovery:** Implement retry logic
+4. **Timeout Configuration:** Set timeout hợp lý cho từng bước
+5. **File Management:** Tổ chức file output có hệ thống
+6. **Parallel Processing:** Có thể tạo nhiều browser instances cho multiple videos
+7. **Monitoring:** Track success rate, timing, errors
+
+***
+
+**Đây là tài liệu đầy đủ để bất kỳ AI/developer nào cũng có thể hiểu và implement automation cho Google Labs Flow!** 🚀
+
+[1](https://labs.google/fx/vi/tools/flow/project/312559a9-f8c5-4d3a-9e64-8e963cd62fac)
