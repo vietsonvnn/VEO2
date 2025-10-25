@@ -200,7 +200,8 @@ class FlowControllerSelenium:
             Video URL if successful, None otherwise
         """
         logger.info(f"🎬 Creating video from prompt...")
-        logger.info(f"   Prompt: {prompt[:50]}...")
+        logger.info(f"   Prompt ({len(prompt)} chars): {prompt[:100]}...")
+        logger.info(f"   Full prompt: {prompt}")
 
         try:
             # Step 0: Check queue limit (Flow allows max 5 pending videos)

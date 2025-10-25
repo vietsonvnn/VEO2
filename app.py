@@ -162,7 +162,7 @@ async def generate_script_async(topic, duration, api_key, cookies, project_id):
             {
                 'number': i + 1,
                 'description': scene.get('description', f'Scene {i+1}'),
-                'prompt': scene.get('prompt', ''),
+                'prompt': scene.get('veo_prompt', scene.get('prompt', '')),
                 'status': 'pending',
                 'video_path': None
             }
