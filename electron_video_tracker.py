@@ -118,59 +118,83 @@ class ElectronVideoTracker:
         
     async def _fill_prompt(self, prompt: str):
         """Fill prompt textarea"""
-        # Find textarea
-        textarea = await self.page.wait_for_selector('textarea[placeholder*="prompt" i], textarea')
-        
+        # Selector theo hướng dẫn: textarea[node="72"]
+        # Fallback nếu không có node attribute
+        textarea = await self.page.wait_for_selector(
+            'textarea[node="72"], textarea[placeholder*="Tạo một video" i], textarea',
+            timeout=10000
+        )
+
+        # Scroll to textarea
+        await textarea.scroll_into_view_if_needed()
+        await self.page.wait_for_timeout(500)
+
         # Clear and fill
         await textarea.click()
         await textarea.fill('')
         await self.page.wait_for_timeout(500)
         await textarea.type(prompt, delay=50)
-        await self.page.wait_for_timeout(2000)
-        
+        await self.page.wait_for_timeout(3000)  # Wait for button to enable
+
     async def _click_generate(self):
-        """Click Generate button"""
-        # Wait for button to be enabled
-        button = await self.page.wait_for_selector('button:has-text("Generate"), button:has-text("Tạo")')
-        
-        # Wait until enabled
-        for _ in range(10):
+        """Click Generate button - chính xác theo hướng dẫn"""
+        logger.info("      🔍 Finding 'Tạo' button...")
+
+        # Theo hướng dẫn: button:has-text("Tạo") với icon arrow_forward
+        # Tìm button có text "Tạo"
+        button = await self.page.wait_for_selector(
+            'button:has-text("Tạo")',
+            timeout=15000
+        )
+
+        # Wait until button is enabled
+        logger.info("      ⏳ Waiting for button to be enabled...")
+        for i in range(15):
             if await button.is_enabled():
+                logger.info("      ✅ Button is enabled!")
                 break
             await self.page.wait_for_timeout(1000)
-        
+
+        # Click
+        logger.info("      👆 Clicking 'Tạo' button...")
         await button.click()
         await self.page.wait_for_timeout(3000)
         
     async def _wait_for_new_video(self, urls_before: set, timeout: int = 120):
         """
         Wait for new video URL to appear
-        Uses polling with network monitoring
+        Theo hướng dẫn: tìm play_arrow icon để biết video ready
         """
         start_time = asyncio.get_event_loop().time()
         check_interval = 3
-        
+
         while asyncio.get_event_loop().time() - start_time < timeout:
             elapsed = int(asyncio.get_event_loop().time() - start_time)
             logger.info(f"   ⏳ Waiting... {elapsed}s / {timeout}s")
-            
-            # Check for play button (video ready)
-            play_button = await self.page.query_selector('button[aria-label*="Play" i], button[aria-label*="Phát" i]')
+
+            # Theo hướng dẫn: Check for play_arrow icon (video ready)
+            # Selector: button có icon play_arrow hoặc aria-label chứa "play"
+            play_button = await self.page.query_selector(
+                'button[aria-label*="play" i], button:has-text("play_arrow")'
+            )
+
             if play_button:
-                logger.info("   ✅ Play button found!")
-                
+                logger.info("   ✅ Play button (play_arrow) found!")
+
                 # Get new URLs
                 urls_after = await self._get_all_video_urls()
                 new_urls = urls_after - urls_before
-                
+
                 if new_urls:
                     # Return FIRST new URL (matches prompt best)
                     new_urls_sorted = sorted(list(new_urls))
                     logger.info(f"   📹 Found {len(new_urls)} new video(s)")
                     return new_urls_sorted[0]
-                    
+                else:
+                    logger.info("   ⚠️  Play button found but no new URLs yet, waiting...")
+
             await self.page.wait_for_timeout(check_interval * 1000)
-            
+
         logger.error(f"   ⏱️ Timeout after {timeout}s")
         return None
         
