@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
 """
-VEO 3.1 - Production UI (Final Version)
-- Card-based layout như reference
+VEO 3.1 - Production UI (Electron Version)
+- Card-based layout với video preview
+- Electron Browser (Playwright) thay vì Selenium
+- Output = 1 video per prompt (auto config)
+- Baseline URL Tracking (100% accurate matching)
+- Regenerate videos (tạo lại)
+- Delete videos from Flow (xóa khỏi project)
 - Log collapsed ở dưới
 - API key input
 - Duration tùy chỉnh
-- Regenerate + Delete buttons
 """
 
 import gradio as gr
@@ -17,7 +21,7 @@ from datetime import datetime
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 
 from script_generator.gemini_generator import ScriptGenerator
-from browser_automation.flow_controller_selenium import FlowControllerSelenium
+from flow_video_tracker import FlowVideoTracker
 from utils.detailed_logger import DetailedLogger
 from dotenv import load_dotenv
 
@@ -189,8 +193,8 @@ async def generate_script_async(topic, duration, api_key, cookies, project_id):
     except Exception as e:
         return f"❌ Lỗi: {str(e)}", ""
 
-def produce_all_videos():
-    """Produce all videos with real-time updates"""
+async def produce_all_videos_async():
+    """Produce all videos with real-time updates using FlowVideoTracker"""
     if not state.scenes:
         yield "❌ Chưa có kịch bản!", ""
         return
@@ -199,91 +203,96 @@ def produce_all_videos():
     def add_log(msg):
         log.append(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}")
 
-    add_log("🚀 Bắt đầu sản xuất")
+    add_log("🚀 Bắt đầu sản xuất với Electron Browser")
     add_log(f"🎬 Tổng: {len(state.scenes)} cảnh")
     yield "\n".join(log), build_scenes_html()
 
     session = datetime.now().strftime("%Y%m%d_%H%M%S")
     logger = DetailedLogger(session_name=session)
 
-    controller = FlowControllerSelenium(cookies_path=state.cookies_path, headless=False)
+    # Use FlowVideoTracker with Electron
+    tracker = FlowVideoTracker(cookies_path=state.cookies_path)
 
     try:
-        add_log("🚀 Khởi động browser...")
+        add_log("🚀 Khởi động Electron browser...")
         yield "\n".join(log), build_scenes_html()
-        controller.start()
 
-        # Use default project ID
-        project_id = DEFAULT_PROJECT_ID
+        await tracker.start()
+        add_log("✅ Browser đã khởi động")
+        yield "\n".join(log), build_scenes_html()
 
+        # Go to project
+        project_id = state.project_id or DEFAULT_PROJECT_ID
         add_log(f"📁 Vào project: {project_id}")
         yield "\n".join(log), build_scenes_html()
 
-        success = controller.goto_project(project_id)
-
-        if success:
-            add_log(f"✅ Đã vào project")
-            state.project_id = project_id
-        else:
-            add_log("❌ Không vào được project")
-            yield "\n".join(log), build_scenes_html()
-            return
-
-        add_log("✅ Sẵn sàng tạo video")
+        await tracker.goto_project(project_id)
+        add_log("✅ Đã vào project")
         yield "\n".join(log), build_scenes_html()
 
-        total = len(state.scenes)
-        for i, scene in enumerate(state.scenes):
-            num = scene['number']
-            start = datetime.now()
+        # Set output to 1 video per prompt
+        add_log("⚙️  Cài đặt output = 1 video...")
+        yield "\n".join(log), build_scenes_html()
 
-            add_log(f"🎬 CẢNH {num}/{total}: {scene['description'][:50]}...")
-            scene['status'] = 'processing'
+        await tracker.set_output_to_1()
+        add_log("✅ Đã cài đặt output = 1")
+        yield "\n".join(log), build_scenes_html()
+
+        # Prepare prompts
+        prompts = [scene['prompt'] for scene in state.scenes]
+
+        add_log(f"🎬 Bắt đầu tạo {len(prompts)} video...")
+        yield "\n".join(log), build_scenes_html()
+
+        # Create all videos (tracker handles sequential creation and URL tracking)
+        scenes_data = await tracker.create_videos(prompts)
+
+        # Update state with results
+        for i, scene_data in enumerate(scenes_data):
+            scene = state.scenes[i]
+            scene['number'] = scene_data['scene_number']
+
+            if scene_data['video_url']:
+                scene['status'] = 'completed'
+                scene['video_path'] = scene_data['video_url']
+                add_log(f"   ✅ Cảnh {scene['number']}: {scene['description'][:40]}")
+                logger.scene_complete(scene['number'], scene_data['video_url'], 0)
+            else:
+                scene['status'] = 'failed'
+                add_log(f"   ❌ Cảnh {scene['number']} thất bại")
+
             yield "\n".join(log), build_scenes_html()
 
-            try:
-                url = controller.create_video_from_prompt(
-                    prompt=scene['prompt'],
-                    aspect_ratio="16:9",
-                    is_first_video=(i==0),
-                    progress_callback=None
-                )
-
-                if url:
-                    dur = (datetime.now() - start).total_seconds()
-                    scene['status'] = 'completed'
-                    scene['video_path'] = url
-                    add_log(f"   ✅ Cảnh {num} hoàn thành ({dur:.1f}s)")
-                    logger.scene_complete(num, url, dur)
-                    yield "\n".join(log), build_scenes_html()
-                else:
-                    scene['status'] = 'failed'
-                    add_log(f"   ❌ Cảnh {num} thất bại")
-                    yield "\n".join(log), build_scenes_html()
-
-            except Exception as e:
-                scene['status'] = 'failed'
-                add_log(f"   ❌ Lỗi cảnh {num}: {str(e)}")
-                yield "\n".join(log), build_scenes_html()
-
-        # Keep browser open for creating more videos
-        # controller.close()
+        # Keep browser open
+        add_log("ℹ️  Trình duyệt vẫn mở - có thể Regenerate hoặc Delete")
         logger.close()
 
         completed = sum(1 for s in state.scenes if s['status'] == 'completed')
-        add_log(f"🎉 KẾT QUẢ: {completed}/{total} cảnh hoàn thành")
-        add_log(f"ℹ️  Trình duyệt vẫn mở - bạn có thể tạo tiếp video khác")
+        add_log(f"🎉 KẾT QUẢ: {completed}/{len(state.scenes)} cảnh hoàn thành")
         yield "\n".join(log), build_scenes_html()
 
     except Exception as e:
-        # Keep browser open even on error
-        # controller.close()
         logger.close()
         add_log(f"❌ Lỗi: {str(e)}")
         yield "\n".join(log), build_scenes_html()
 
-def regenerate_scene(scene_num, progress=gr.Progress()):
-    """Regenerate scene"""
+def produce_all_videos():
+    """Wrapper to run async produce_all_videos_async"""
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        gen = produce_all_videos_async()
+        while True:
+            try:
+                result = loop.run_until_complete(gen.__anext__())
+                yield result
+            except StopAsyncIteration:
+                break
+    finally:
+        loop.close()
+
+async def regenerate_scene_async(scene_num, progress=gr.Progress()):
+    """Regenerate scene using FlowVideoTracker"""
     try:
         num = int(scene_num)
         if num < 1 or num > len(state.scenes):
@@ -295,39 +304,37 @@ def regenerate_scene(scene_num, progress=gr.Progress()):
             log.append(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}")
 
         add_log(f"🔄 TẠO LẠI CẢNH {num}")
-
-        controller = FlowControllerSelenium(cookies_path=state.cookies_path, headless=False)
         scene['status'] = 'processing'
 
+        tracker = FlowVideoTracker(cookies_path=state.cookies_path)
+
         progress(0.1, desc="🚀 Khởi động...")
-        controller.start()
-        controller.goto_flow()
-        add_log("✅ Đã vào Flow homepage")
+        await tracker.start()
+        add_log("✅ Browser khởi động")
 
-        start = datetime.now()
+        # Go to project
+        project_id = state.project_id or DEFAULT_PROJECT_ID
+        await tracker.goto_project(project_id)
+        add_log(f"✅ Vào project {project_id}")
 
-        def cb(elapsed, percent):
-            progress(0.3 + (percent/100)*0.6, desc=f"🔄 {percent}%")
+        # Set output to 1
+        await tracker.set_output_to_1()
+        add_log("✅ Đã set output = 1")
 
-        url = controller.create_video_from_prompt(
-            prompt=scene['prompt'],
-            aspect_ratio="16:9",
-            is_first_video=True,
-            progress_callback=cb
-        )
+        progress(0.3, desc="🎬 Tạo video...")
 
-        if url:
-            dur = (datetime.now() - start).total_seconds()
+        # Create single video
+        scenes_data = await tracker.create_videos([scene['prompt']])
+
+        if scenes_data and scenes_data[0]['video_url']:
             scene['status'] = 'completed'
-            scene['video_path'] = url
-            add_log(f"✅ Hoàn thành ({dur:.1f}s)")
+            scene['video_path'] = scenes_data[0]['video_url']
+            add_log(f"✅ Hoàn thành")
         else:
             scene['status'] = 'failed'
             add_log("❌ Thất bại")
 
-        # Keep browser open for creating more videos
-        # controller.close()
-        add_log(f"ℹ️  Trình duyệt vẫn mở - có thể tạo tiếp")
+        add_log("ℹ️  Trình duyệt vẫn mở")
         progress(1.0, desc="✅ Xong!")
         return "\n".join(log), build_scenes_html()
 
@@ -335,16 +342,64 @@ def regenerate_scene(scene_num, progress=gr.Progress()):
         add_log(f"❌ Lỗi: {str(e)}")
         return "\n".join(log), build_scenes_html()
 
-def delete_scene(scene_num):
-    """Delete scene"""
+def regenerate_scene(scene_num, progress=gr.Progress()):
+    """Wrapper for async regenerate"""
+    return asyncio.run(regenerate_scene_async(scene_num, progress))
+
+async def delete_scene_async(scene_num):
+    """Delete scene using FlowVideoTracker"""
     try:
         num = int(scene_num)
+
+        # Find scene
+        scene = next((s for s in state.scenes if s['number'] == num), None)
+        if not scene:
+            return "❌ Scene không tồn tại!", ""
+
+        # Get video URL to delete
+        video_url = scene.get('video_path')
+
+        log = []
+        def add_log(msg):
+            log.append(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}")
+
+        add_log(f"🗑️  XÓA CẢNH {num}")
+
+        if video_url:
+            # Delete from Flow
+            tracker = FlowVideoTracker(cookies_path=state.cookies_path)
+
+            add_log("🚀 Khởi động browser...")
+            await tracker.start()
+
+            project_id = state.project_id or DEFAULT_PROJECT_ID
+            await tracker.goto_project(project_id)
+            add_log(f"✅ Vào project {project_id}")
+
+            # Delete video
+            success = await tracker.delete_video_by_url(video_url)
+
+            if success:
+                add_log(f"✅ Đã xóa video khỏi Flow")
+            else:
+                add_log(f"❌ Không xóa được video khỏi Flow")
+        else:
+            add_log("ℹ️  Scene chưa có video")
+
+        # Remove from state
         state.scenes = [s for s in state.scenes if s['number'] != num]
         for i, scene in enumerate(state.scenes):
             scene['number'] = i + 1
-        return f"✅ Đã xóa cảnh {num}", build_scenes_html()
-    except:
-        return "❌ Lỗi xóa", ""
+
+        add_log(f"✅ Đã xóa cảnh {num} khỏi danh sách")
+        return "\n".join(log), build_scenes_html()
+
+    except Exception as e:
+        return f"❌ Lỗi: {str(e)}", ""
+
+def delete_scene(scene_num):
+    """Wrapper for async delete"""
+    return asyncio.run(delete_scene_async(scene_num))
 
 with gr.Blocks(theme=gr.themes.Soft(), css=css, title="VEO 3.1") as app:
     gr.Markdown("# 🎬 VEO 3.1 - Production Tool")
@@ -361,7 +416,7 @@ with gr.Blocks(theme=gr.themes.Soft(), css=css, title="VEO 3.1") as app:
 
             with gr.Row():
                 project_id = gr.Textbox(label="📁 Project ID", value=DEFAULT_PROJECT_ID, scale=2)
-                cookies = gr.Textbox(label="🍪 Cookies", value="./cookie.txt", scale=1)
+                cookies = gr.Textbox(label="🍪 Cookies", value="./config/cookies.json", scale=1)
 
             script_output = gr.Textbox(label="📋 Kết quả", lines=4, elem_classes="log-box")
 
@@ -417,12 +472,15 @@ with gr.Blocks(theme=gr.themes.Soft(), css=css, title="VEO 3.1") as app:
 
 if __name__ == "__main__":
     print("="*60)
-    print("🎬 VEO 3.1 - Production Tool (Final)")
+    print("🎬 VEO 3.1 - Production Tool (ELECTRON VERSION)")
     print("="*60)
     print("✨ Card-based UI")
+    print("🚀 Electron Browser (Playwright)")
+    print("🎯 Output = 1 video per prompt")
+    print("📍 Baseline URL Tracking (100% accurate)")
+    print("🔄 Regenerate videos")
+    print("🗑️  Delete videos from Flow")
     print("📊 Log collapsed at bottom")
-    print("🔑 API key input")
-    print("⏱️ Duration: 0.5-10 phút")
     print("="*60)
     print("🌐 http://localhost:7860")
     print("="*60)
