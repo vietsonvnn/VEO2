@@ -137,28 +137,64 @@ class ElectronVideoTracker:
         await self.page.wait_for_timeout(3000)  # Wait for button to enable
 
     async def _click_generate(self):
-        """Click Generate button - chính xác theo hướng dẫn"""
-        logger.info("      🔍 Finding 'Tạo' button...")
+        """Click Generate button - tránh nhầm với breadcrumb"""
+        logger.info("      🔍 Finding Generate button (NOT breadcrumb)...")
 
-        # Theo hướng dẫn: button:has-text("Tạo") với icon arrow_forward
-        # Tìm button có text "Tạo"
-        button = await self.page.wait_for_selector(
-            'button:has-text("Tạo")',
-            timeout=15000
-        )
+        # QUAN TRỌNG: Tránh button "Trình tạo cảnh" (node="176") trong breadcrumb
+        # Chỉ tìm button "Tạo" có icon arrow_forward (generate button thật)
 
-        # Wait until button is enabled
-        logger.info("      ⏳ Waiting for button to be enabled...")
-        for i in range(15):
-            if await button.is_enabled():
-                logger.info("      ✅ Button is enabled!")
+        # Strategy 1: Tìm button "Tạo" KHÔNG nằm trong breadcrumb/ul
+        # Strategy 2: Tìm button có icon arrow_forward
+
+        try:
+            # Tìm tất cả buttons có text "Tạo"
+            buttons = await self.page.query_selector_all('button:has-text("Tạo")')
+            logger.info(f"      Found {len(buttons)} buttons with 'Tạo' text")
+
+            # Filter: Loại bỏ buttons trong breadcrumb (node="176" hoặc innerText="Trình tạo cảnh")
+            generate_button = None
+            for btn in buttons:
+                # Check node attribute
+                node_attr = await btn.get_attribute('node')
+                inner_text = await btn.inner_text()
+
+                logger.info(f"      Button: node={node_attr}, text='{inner_text.strip()}'")
+
+                # Skip breadcrumb button (node="176" hoặc text chứa "Trình tạo cảnh")
+                if node_attr == "176" or "Trình tạo cảnh" in inner_text:
+                    logger.info("      ⏭️  Skipping breadcrumb button")
+                    continue
+
+                # Skip nếu nằm trong <ul> breadcrumb
+                parent = await btn.evaluate('el => el.parentElement.tagName')
+                if parent == 'UL':
+                    logger.info("      ⏭️  Skipping button in <ul> (breadcrumb)")
+                    continue
+
+                # Đây là button Generate thật!
+                generate_button = btn
+                logger.info("      ✅ Found correct Generate button!")
                 break
-            await self.page.wait_for_timeout(1000)
 
-        # Click
-        logger.info("      👆 Clicking 'Tạo' button...")
-        await button.click()
-        await self.page.wait_for_timeout(3000)
+            if not generate_button:
+                raise Exception("Generate button not found (all buttons were breadcrumb)")
+
+            # Wait until enabled
+            logger.info("      ⏳ Waiting for button to be enabled...")
+            for i in range(15):
+                if await generate_button.is_enabled():
+                    logger.info("      ✅ Button is enabled!")
+                    break
+                await self.page.wait_for_timeout(1000)
+
+            # Click
+            logger.info("      👆 Clicking Generate button...")
+            await generate_button.click()
+            await self.page.wait_for_timeout(3000)
+
+        except Exception as e:
+            logger.error(f"      ❌ Error clicking Generate: {e}")
+            raise
         
     async def _wait_for_new_video(self, urls_before: set, timeout: int = 120):
         """
