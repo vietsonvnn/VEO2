@@ -270,8 +270,9 @@ async def produce_all_videos_async():
         scenes_data = await tracker.create_videos(prompts)
 
         # Update state with results
-        for i, scene_data in enumerate(scenes_data):
-            scene = state.scenes[i]
+        # scenes_data is Dict[int, Dict], keys are 1-indexed scene numbers
+        for scene_num, scene_data in scenes_data.items():
+            scene = state.scenes[scene_num - 1]  # Convert to 0-indexed
             scene['number'] = scene_data['scene_number']
 
             if scene_data['video_url']:
