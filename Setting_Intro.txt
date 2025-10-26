@@ -1,0 +1,38 @@
+Đây là tài liệu chi tiết về toàn bộ các nút, trường cài đặt đầu ra và lựa chọn mô hình trong giao diện Flow để tool electron có thể nhận diện và thao tác:
+
+***
+
+**BẢNG TỔNG HỢP NÚT VÀ CÀI ĐẶT GIAO DIỆN FLOW**
+
+| Nhóm nút/trường              | Loại input      | ID nút/ui        | Tên hiển thị              | Giá trị mặc định | Mô tả/Tác dụng                                             | Gợi ý nhận diện | Tooltip/Mô tả phụ trợ              |
+|------------------------------|-----------------|------------------|---------------------------|------------------|------------------------------------------------------------|------------------|-------------------------------------|
+| Chọn loại xuất video         | dropdown/select | node="222"       | Từ văn bản sang video     | [giá trị mặc định: “Từ văn bản sang video”] | Chọn chế độ tạo video (text, frame, hoặc component)        | dropdown/select, có arrow_drop_down | text\\_analysis, photo\\_spark, photo\\_merge\\_auto |
+| Nhập câu lệnh/video prompt   | textarea        | node="31"        | Tạo một video bằng văn bản…| trống           | Nhập lệnh nội dung video                                    | textarea, có placeholder           | Không thấy tooltip                |
+| Tỷ lệ khung hình             | radio/checkbox  | crop\\_portrait, crop\\_landscape | Khổ dọc (9:16), Khổ ngang (16:9) | crop\\_portrait (9:16) | Chọn tỷ lệ xuất video từ danh sách (thường: 9:16, 16:9)     | Có label và icon                   | crop\\_landscape = 16:9, crop\\_portrait = 9:16       |
+| Số lượng đầu ra/mỗi lệnh     | text/number     | (Không rõ node)  | Câu trả lời đầu ra cho mỗi câu lệnh | 1                | Số video được xuất ra cho một lần lệnh                      | Trường số hoặc spinner             | Không thấy tooltip                |
+| Chọn mô hình xử lý/video     | radio           | radio_button_checked/unchecked | Veo 3.1 - Fast, Veo 3.1 - Quality, Veo 2 - Fast, Veo 2 - Quality | Veo 3.1 - Fast      | Lựa chọn phiên bản mô hình cho việc render video            | radio_button có label rõ            | Veo 2, Veo 3.1, Beta Audio        |
+| Các nút hệ thống/phản hồi    | button/icon     | info, feedback, flag | Giới thiệu, Gửi ý kiến, Báo cáo vấn đề |                | Điều hướng và phản hồi về hệ thống                          | Có icon tương ứng, ở góc/trái màn hình| Thông báo quyền riêng tư        |
+
+**Cách tool electron nhận diện/tương tác**:
+- Dựa vào loại input (radio, select, textarea, spinner) và thuộc tính aria-label, node-id (nếu có).
+- Chú ý các trường có arrow_drop_down hoặc radio_button thực sự là radio/select.
+- Button hệ thống luôn có icon kèm và thường nằm ở phần phụ trợ/giới thiệu/feedback.
+
+**Các mô hình có thể chọn**:
+- Veo 3.1 - Fast (default, radio checked)
+- Veo 3.1 - Quality (radio unchecked)
+- Veo 2 - Fast (radio unchecked, sắp ngưng hỗ trợ)
+- Veo 2 - Quality (radio unchecked, sắp ngưng hỗ trợ)
+- Ngoài ra beta audio có thể bật/tắt qua radio nếu khả dụng.
+
+**Ví dụ luồng nhận diện nút**:
+- Nếu radio_button_checked && label == Veo 3.1 - Fast → trạng thái active.
+- Dropdown/select có class “arrow_drop_down” để nhận diện nhanh khối đầu ra video.
+- Khung nhập lệnh luôn là textarea, placeholder “Tạo một video bằng văn bản...”
+
+***
+
+Tài liệu này đủ để một tool electron tự động nhận diện và thao tác toàn bộ các cài đặt đầu ra/mô hình của Flow, kể cả trường hợp giao diện thay đổi nhóm/thẻ hoặc xuất hiện thêm phiên bản mô hình mới.[1]
+
+[1](https://labs.google/fx/vi/tools/flow/project/9b01acc0-86a2-4f7c-a4e0-6b2a2ff74bc0)
+[2](https://labs.google/fx/vi/tools/flow/project/9b01acc0-86a2-4f7c-a4e0-6b2a2ff74bc0)

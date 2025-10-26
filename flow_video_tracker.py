@@ -101,6 +101,68 @@ class FlowVideoTracker:
         except Exception as e:
             logger.warning(f"   ⚠️  Settings error: {e}")
 
+    async def set_aspect_ratio(self, aspect_ratio: str = "16:9"):
+        """
+        Set aspect ratio (9:16 hoặc 16:9)
+        aspect_ratio: "9:16" cho Khổ dọc hoặc "16:9" cho Khổ ngang
+        """
+        logger.info(f"\n⚙️  Setting aspect ratio: {aspect_ratio}...")
+
+        try:
+            # Scroll to settings area
+            await self.page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+            await self.page.wait_for_timeout(1500)
+
+            # Find ratio button based on aspect_ratio param
+            if aspect_ratio == "9:16":
+                # Click Khổ dọc (crop_portrait)
+                portrait_btn = await self.page.query_selector('button:has-text("crop_portrait"), input[value="crop_portrait"]')
+                if portrait_btn:
+                    await portrait_btn.click()
+                    logger.info("   ✅ Set to 9:16 (Portrait)")
+            else:  # 16:9
+                # Click Khổ ngang (crop_landscape)
+                landscape_btn = await self.page.query_selector('button:has-text("crop_landscape"), input[value="crop_landscape"]')
+                if landscape_btn:
+                    await landscape_btn.click()
+                    logger.info("   ✅ Set to 16:9 (Landscape)")
+
+            await self.page.wait_for_timeout(1000)
+
+        except Exception as e:
+            logger.error(f"   ❌ Failed to set aspect ratio: {e}")
+
+    async def set_model(self, model: str = "Veo 3.1 - Fast"):
+        """
+        Set video generation model
+        model: "Veo 3.1 - Fast" | "Veo 3.1 - Quality" | "Veo 2 - Fast" | "Veo 2 - Quality"
+        """
+        logger.info(f"\n⚙️  Setting model: {model}...")
+
+        try:
+            # Scroll to settings
+            await self.page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+            await self.page.wait_for_timeout(1500)
+
+            # Find model radio button by text
+            # Look for radio button or label containing the model name
+            model_buttons = await self.page.query_selector_all('button, label, div')
+
+            for btn in model_buttons:
+                text = await btn.inner_text()
+                if model in text:
+                    try:
+                        # Check if it's clickable (radio button or label)
+                        await btn.click()
+                        logger.info(f"   ✅ Set to {model}")
+                        await self.page.wait_for_timeout(1000)
+                        break
+                    except:
+                        continue
+
+        except Exception as e:
+            logger.error(f"   ❌ Failed to set model: {e}")
+
     async def create_videos(self, prompts: List[str]) -> Dict[int, Dict]:
         """
         Create multiple videos from prompts
@@ -156,9 +218,10 @@ class FlowVideoTracker:
         textarea = await self.page.wait_for_selector('textarea', timeout=10000)
         await textarea.click()
         await textarea.fill('')
-        await self.page.wait_for_timeout(500)
-        await textarea.type(prompt, delay=30)
-        await self.page.wait_for_timeout(3000)
+        await self.page.wait_for_timeout(300)
+        # Use fill() instead of type() for instant input (much faster)
+        await textarea.fill(prompt)
+        await self.page.wait_for_timeout(1000)
 
         # Click Generate (AVOID breadcrumb)
         logger.info("   🎯 Clicking Generate...")

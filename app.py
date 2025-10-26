@@ -61,6 +61,8 @@ class AppState:
         self.scenes = []
         self.project_id = None
         self.cookies_path = None
+        self.aspect_ratio = "16:9"
+        self.model = "Veo 3.1 - Fast"
 
 state = AppState()
 
@@ -158,7 +160,7 @@ def build_scenes_html():
 
     return "\n".join(html) + js_script
 
-async def generate_script_async(topic, duration, api_key, cookies, project_id):
+async def generate_script_async(topic, duration, api_key, cookies, project_id, aspect_ratio, model):
     """Generate script"""
     try:
         if not os.path.exists(cookies):
@@ -186,8 +188,10 @@ async def generate_script_async(topic, duration, api_key, cookies, project_id):
         ]
         state.project_id = project_id or DEFAULT_PROJECT_ID
         state.cookies_path = cookies
+        state.aspect_ratio = aspect_ratio
+        state.model = model
 
-        output = f"✅ {script.get('title', 'Kịch bản')}\n📝 {script.get('description', '')}\n🎬 {len(state.scenes)} cảnh"
+        output = f"✅ {script.get('title', 'Kịch bản')}\n📝 {script.get('description', '')}\n🎬 {len(state.scenes)} cảnh\n📐 Tỷ lệ: {aspect_ratio}\n🎨 Model: {model}"
         return output, build_scenes_html()
 
     except Exception as e:
@@ -236,6 +240,24 @@ async def produce_all_videos_async():
 
         await tracker.set_output_to_1()
         add_log("✅ Đã cài đặt output = 1")
+        yield "\n".join(log), build_scenes_html()
+
+        # Set aspect ratio (default 16:9)
+        aspect_ratio = getattr(state, 'aspect_ratio', '16:9')
+        add_log(f"⚙️  Cài đặt aspect ratio: {aspect_ratio}...")
+        yield "\n".join(log), build_scenes_html()
+
+        await tracker.set_aspect_ratio(aspect_ratio)
+        add_log(f"✅ Đã set aspect ratio: {aspect_ratio}")
+        yield "\n".join(log), build_scenes_html()
+
+        # Set model (default Veo 3.1 - Fast)
+        model = getattr(state, 'model', 'Veo 3.1 - Fast')
+        add_log(f"⚙️  Cài đặt model: {model}...")
+        yield "\n".join(log), build_scenes_html()
+
+        await tracker.set_model(model)
+        add_log(f"✅ Đã set model: {model}")
         yield "\n".join(log), build_scenes_html()
 
         # Prepare prompts
@@ -418,6 +440,20 @@ with gr.Blocks(theme=gr.themes.Soft(), css=css, title="VEO 3.1") as app:
                 project_id = gr.Textbox(label="📁 Project ID", value=DEFAULT_PROJECT_ID, scale=2)
                 cookies = gr.Textbox(label="🍪 Cookies", value="./config/cookies.json", scale=1)
 
+            with gr.Row():
+                aspect_ratio = gr.Radio(
+                    choices=["16:9", "9:16"],
+                    value="16:9",
+                    label="📐 Tỷ lệ khung hình",
+                    info="16:9 = Khổ ngang | 9:16 = Khổ dọc"
+                )
+                model = gr.Dropdown(
+                    choices=["Veo 3.1 - Fast", "Veo 3.1 - Quality"],
+                    value="Veo 3.1 - Fast",
+                    label="🎨 Mô hình",
+                    info="Fast = Nhanh hơn | Quality = Chất lượng cao hơn"
+                )
+
             script_output = gr.Textbox(label="📋 Kết quả", lines=4, elem_classes="log-box")
 
         with gr.Column(scale=1):
@@ -443,12 +479,12 @@ with gr.Blocks(theme=gr.themes.Soft(), css=css, title="VEO 3.1") as app:
         delete_btn_hidden = gr.Button("Delete", elem_id="delete-btn")
 
     # Event handlers
-    def gen_wrapper(t, d, a, c, p):
-        return asyncio.run(generate_script_async(t, d, a, c, p))
+    def gen_wrapper(t, d, a, c, p, ar, m):
+        return asyncio.run(generate_script_async(t, d, a, c, p, ar, m))
 
     generate_btn.click(
         fn=gen_wrapper,
-        inputs=[topic, duration, api_key, cookies, project_id],
+        inputs=[topic, duration, api_key, cookies, project_id, aspect_ratio, model],
         outputs=[script_output, scenes_html]
     )
 
