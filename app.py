@@ -254,15 +254,18 @@ def produce_all_videos():
                 add_log(f"   ❌ Lỗi cảnh {num}: {str(e)}")
                 yield "\n".join(log), build_scenes_html()
 
-        controller.close()
+        # Keep browser open for creating more videos
+        # controller.close()
         logger.close()
 
         completed = sum(1 for s in state.scenes if s['status'] == 'completed')
         add_log(f"🎉 KẾT QUẢ: {completed}/{total} cảnh hoàn thành")
+        add_log(f"ℹ️  Trình duyệt vẫn mở - bạn có thể tạo tiếp video khác")
         yield "\n".join(log), build_scenes_html()
 
     except Exception as e:
-        controller.close()
+        # Keep browser open even on error
+        # controller.close()
         logger.close()
         add_log(f"❌ Lỗi: {str(e)}")
         yield "\n".join(log), build_scenes_html()
@@ -310,7 +313,9 @@ def regenerate_scene(scene_num, progress=gr.Progress()):
             scene['status'] = 'failed'
             add_log("❌ Thất bại")
 
-        controller.close()
+        # Keep browser open for creating more videos
+        # controller.close()
+        add_log(f"ℹ️  Trình duyệt vẫn mở - có thể tạo tiếp")
         progress(1.0, desc="✅ Xong!")
         return "\n".join(log), build_scenes_html()
 
