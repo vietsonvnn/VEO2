@@ -28,49 +28,53 @@ class ElectronVideoTracker:
     async def start(self):
         """Start Electron browser"""
         logger.info("🚀 Starting Electron browser...")
-        
+
         self.playwright = await async_playwright().start()
-        
+
         # Launch Chromium with Electron-like capabilities
         self.browser = await self.playwright.chromium.launch(
             headless=False,
             executable_path="/Applications/Comet.app/Contents/MacOS/Comet"
         )
-        
-        # Load cookies
+
+        # Load cookies and create context with them
         with open(self.cookies_path) as f:
             cookies = json.load(f)
-        
+
         self.context = await self.browser.new_context()
         await self.context.add_cookies(cookies)
-        
+
+        # Create page and immediately navigate to avoid about:blank issue
         self.page = await self.context.new_page()
-        logger.info("✅ Electron browser started")
-        
-    async def goto_flow(self):
-        """Navigate to Flow"""
+
+        # Go to Flow homepage first to establish session
         logger.info("🌐 Navigating to Flow...")
-        await self.page.goto("https://labs.google/fx/vi/tools/flow")
-        await self.page.wait_for_load_state("networkidle")
-        logger.info("✅ Loaded Flow")
+        try:
+            await self.page.goto("https://labs.google/fx/vi/tools/flow",
+                                wait_until="domcontentloaded",
+                                timeout=30000)
+            await self.page.wait_for_timeout(3000)
+            logger.info("✅ Electron browser started and logged in")
+        except Exception as e:
+            logger.error(f"❌ Error navigating to Flow: {e}")
+            raise
+
+    async def goto_flow(self):
+        """Navigate to Flow (if not already there)"""
+        logger.info("🌐 Going to Flow homepage...")
+        await self.page.goto("https://labs.google/fx/vi/tools/flow",
+                            wait_until="domcontentloaded",
+                            timeout=30000)
+        await self.page.wait_for_timeout(2000)
+        logger.info("✅ At Flow homepage")
         
     async def goto_project(self, project_id: str):
         """Go to specific project"""
         url = f"https://labs.google/fx/vi/tools/flow/project/{project_id}"
         logger.info(f"📁 Going to project: {project_id}")
-        try:
-            await self.page.goto(url, wait_until="domcontentloaded", timeout=30000)
-            await self.page.wait_for_timeout(5000)  # Wait for app to initialize
-            logger.info("✅ Project loaded")
-        except Exception as e:
-            logger.error(f"❌ Error loading project: {e}")
-            # Try going to Flow first
-            logger.info("🔄 Trying Flow homepage first...")
-            await self.goto_flow()
-            await self.page.wait_for_timeout(3000)
-            await self.page.goto(url, wait_until="domcontentloaded", timeout=30000)
-            await self.page.wait_for_timeout(5000)
-            logger.info("✅ Project loaded (via homepage)")
+        await self.page.goto(url, wait_until="domcontentloaded", timeout=30000)
+        await self.page.wait_for_timeout(5000)  # Wait for Flow app to initialize
+        logger.info("✅ Project loaded")
         
     async def track_video_creation(self, scene_number: int, prompt: str):
         """
