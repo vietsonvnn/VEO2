@@ -128,13 +128,25 @@ def build_scenes_html():
     js_script = """
     <script>
     function regenerateScene(num) {
-        document.getElementById('regen-scene-num').value = num;
-        document.getElementById('regen-btn').click();
+        // Find Gradio input by elem_id
+        const numInput = document.querySelector('#regen-scene-num input, #regen-scene-num');
+        const btn = document.querySelector('#regen-btn');
+        if (numInput && btn) {
+            numInput.value = num;
+            // Dispatch input event to update Gradio state
+            numInput.dispatchEvent(new Event('input', { bubbles: true }));
+            setTimeout(() => btn.click(), 100);
+        }
     }
     function deleteScene(num) {
         if (confirm('Xóa cảnh ' + num + '?')) {
-            document.getElementById('delete-scene-num').value = num;
-            document.getElementById('delete-btn').click();
+            const numInput = document.querySelector('#delete-scene-num input, #delete-scene-num');
+            const btn = document.querySelector('#delete-btn');
+            if (numInput && btn) {
+                numInput.value = num;
+                numInput.dispatchEvent(new Event('input', { bubbles: true }));
+                setTimeout(() => btn.click(), 100);
+            }
         }
     }
     </script>
@@ -294,7 +306,7 @@ def regenerate_scene(scene_num, progress=gr.Progress()):
 
         start = datetime.now()
 
-        def cb(elapsed, percent, screenshot):
+        def cb(elapsed, percent):
             progress(0.3 + (percent/100)*0.6, desc=f"🔄 {percent}%")
 
         url = controller.create_video_from_prompt(
